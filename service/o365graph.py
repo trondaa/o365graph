@@ -108,10 +108,10 @@ class DataAccess:
 data_access_layer = DataAccess()
 
 
-def stream_json(clean):
+def stream_json(entities):
     first = True
     yield '['
-    for i, row in enumerate(clean):
+    for i, row in enumerate(entities):
         if not first:
             yield ','
         else:
