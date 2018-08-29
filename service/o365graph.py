@@ -13,7 +13,7 @@ import ast
 app = Flask(__name__)
 logger = None
 format_string = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-logger = logging.getLogger('cvpartner-rest-service')
+logger = logging.getLogger('o365graph-service')
 
 # Log to stdout
 stdout_handler = logging.StreamHandler()
@@ -45,12 +45,17 @@ def get_schema(obj, access_token, path):
     url = os.environ.get('base_url') + path
     headers = {'Authorization': 'Bearer '+ access_token, 'Accept': 'application/json'}
     for k, v in obj.items():
-        if k == "id":
+        if k is not "id" and v is not None:
+            schema_res[k] = v
+
+        else:
             url += v + "?$select=id,displayName,techmikael_GenericSchema"
             resp =requests.get(url, headers=headers)
-            schema_res = ast.literal_eval((decode_resp(resp.content)))
-        else:
-            pass
+            schema_res = json.loads(decode_resp(resp.content))
+
+
+    else:
+        pass
     return schema_res
 
 class DataAccess:
@@ -108,10 +113,10 @@ class DataAccess:
 data_access_layer = DataAccess()
 
 
-def stream_json(entities):
+def stream_json(clean):
     first = True
     yield '['
-    for i, row in enumerate(entities):
+    for i, row in enumerate(clean):
         if not first:
             yield ','
         else:
