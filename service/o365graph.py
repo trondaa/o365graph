@@ -124,9 +124,10 @@ def stream_json(clean):
         yield json.dumps(row)
     yield ']'
 
-
-@app.route("/<path:path>", methods=["GET"])
+@app.route("/<path:path>", methods=["GET", "POST"])
 def get(path):
+    if flask.reguest.method == "POST":
+        path = request.get_json()
     entities = data_access_layer.get_paged_entities(path)
     return Response(
         stream_json(entities),
