@@ -51,7 +51,7 @@ def get_schema(obj, access_token, path):
         if k == "id":
             url += v + "?$select=id,displayName,techmikael_GenericSchema"
             resp =requests.get(url, headers=headers)
-            schema_res = json.loads(decode_resp(resp.content))
+            schema_res['techmikael_GenericSchema'] = json.loads(decode_resp(resp.content))
 
 
     else:
