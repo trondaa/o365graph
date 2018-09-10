@@ -39,6 +39,23 @@ def get_token():
 def decode_resp(obj):
     if isinstance(obj, (bytes, bytearray)):
         return obj.decode('ASCII')
+
+# def get_membership(obj, access_token, path):
+#     user ={}
+#     url = os.environ.get('base_url') + path
+#     headers = {'Authorization': 'Bearer ' + access_token, 'Accept': 'application/json'}
+#     for k, v in obj.items():
+#         if k is not "id" and v is not None:
+#             user[k] = v
+#         if k == "id":
+#             try:
+#                 url += v + "memberOf"
+#                 resp = requests.get(url, headers=headers)
+#             except Exception:
+#
+#     else:
+#         pass
+#     return user
 #if groups, get this for the techMikael_schema
 def get_schema(obj, access_token, path):
     schema_res = {}
@@ -74,7 +91,8 @@ class DataAccess:
 #main get function, will probably run most via path:path
     def __get_all_paged_entities(self, path):
         logger.info("Fetching data from paged url: %s", path)
-        url = os.environ.get("base_url") + path
+        #url = os.environ.get("base_url") + path + os.environ.get("limit")
+        url = "https://graph.microsoft.com/v1.0/groups?$select=id,deletedDateTime,classification,createdDateTime,creationOptions,description,displayName,groupTypes,mail,mailEnabled,mailNickname,onPremisesLastSyncDateTime,onPremisesSecurityIdentifier,onPremisesSyncEnabled,preferredDataLocation,proxyAddresses,renewedDateTime,resourceBehaviorOptions,resourceProvisioningOptions,securityEnabled,visibility,onPremisesProvisioningErrors,techmikael_GenericSchema&$expand=members"
         access_token = get_token()
         next_page = url
         page_counter = 1
@@ -89,9 +107,12 @@ class DataAccess:
                 logger.error("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
                 raise AssertionError ("Unexpected response status code: %d with response text %s"%(req.status_code, req.text))
             dict = dotdictify.dotdictify(json.loads(req.text))
+            logger.info(dict)
             for entity in dict.get(os.environ.get("entities_path")):
                 if path == os.environ.get(('group_url')):
                     yield get_schema(entity, access_token, path)
+                # if path == os.environ.get(('user_url')):
+                #     yield get_membership(entity, access_token, path)
                 else:
                     yield(entity)
 
@@ -126,7 +147,7 @@ def stream_json(clean):
 
 @app.route("/<path:path>", methods=["GET", "POST"])
 def get(path):
-    if flask.reguest.method == "POST":
+    if request.method == "POST":
         path = request.get_json()
     entities = data_access_layer.get_paged_entities(path)
     return Response(
@@ -134,14 +155,28 @@ def get(path):
         mimetype='application/json'
     )
 
-@app.route("/user", methods=["GET"])
+@app.route("/user", methods=["GET", "POST"])
 def get_user():
-    path = os.environ.get("user_url")
-    entities = data_access_layer.get_paged_entities(path)
-    return Response(
-        stream_json(entities),
-        mimetype='application/json'
-    )
+    if request.method == "POST":
+        path = request.get_json()
+        for k, v in path.items():
+            if k == "id":
+                path = v
+                logger.info(path)
+            else:
+                break
+        entities = data_access_layer.get_paged_entities(path)
+        return Response(
+            stream_json(entities),
+            mimetype='application/json'
+        )
+    else:
+        path = os.environ.get("user_url")
+        entities = data_access_layer.get_paged_entities(path)
+        return Response(
+            stream_json(entities),
+            mimetype='application/json'
+        )
 
 @app.route("/group", methods=["GET"])
 def get_cv():
