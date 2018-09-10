@@ -37,18 +37,6 @@ def get_token():
     return token
 
 class DataAccess:
-#all lists that needs to be updated
-    def __get_all_lists(self, path):
-        logger.info("Fetching data from url: %s", path)
-        url=os.environ.get("base_url") + path
-        req = requests.get(url, headers=headers)
-
-        if req.status_code != 200:
-            logger.error("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
-            raise AssertionError("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
-        clean = json.loads(req.text)
-        for entity in clean:
-            yield entity
 #main get function, will probably run most via path:path
     def __get_all_paged_entities(self, path):
         logger.info("Fetching data from paged url: %s", path)
