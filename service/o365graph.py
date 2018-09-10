@@ -40,7 +40,7 @@ class DataAccess:
 #main get function, will probably run most via path:path
     def __get_all_paged_entities(self, path):
         logger.info("Fetching data from paged url: %s", path)
-        url = os.environ.get("base_url") + path
+        url = os.environ.get("base_url") + path + os.environ.get('groups-odata')
         access_token = get_token()
         next_page = url
         page_counter = 1
@@ -55,7 +55,9 @@ class DataAccess:
                 logger.error("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
                 raise AssertionError ("Unexpected response status code: %d with response text %s"%(req.status_code, req.text))
             dict = dotdictify.dotdictify(json.loads(req.text))
-            yield(dict)
+            for entity in dict.get(os.environ.get("entities_path")):
+
+                yield(entity)
 
             if dict.get(os.environ.get('next_page')) is not None:
                 page_counter+=1
@@ -86,9 +88,8 @@ def stream_json(clean):
 def get(path):
     if request.method == "POST":
         path = request.get_json()
-    else:
+    if request.method == "GET":
         path = path
-
     entities = data_access_layer.get_paged_entities(path)
 
     return Response(
