@@ -40,7 +40,7 @@ class DataAccess:
 #main get function, will probably run most via path:path
     def __get_all_paged_entities(self, path):
         logger.info("Fetching data from paged url: %s", path)
-        url = os.environ.get("base_url") + path + os.environ.get('groups-odata')
+        url = os.environ.get("base_url") + path
         access_token = get_token()
         next_page = url
         page_counter = 1
@@ -54,19 +54,27 @@ class DataAccess:
             if req.status_code != 200:
                 logger.error("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
                 raise AssertionError ("Unexpected response status code: %d with response text %s"%(req.status_code, req.text))
-            dict = dotdictify.dotdictify(json.loads(req.text))
-            for entity in dict.get(os.environ.get("entities_path")):
+            res = dotdictify.dotdictify(json.loads(req.text))
+            for entity in res.get(os.environ.get("entities_path")):
 
                 yield(entity)
 
-            if dict.get(os.environ.get('next_page')) is not None:
+            if res.get(os.environ.get('next_page')) is not None:
                 page_counter+=1
-                next_page = dict.get(os.environ.get('next_page'))
+                next_page = res.get(os.environ.get('next_page'))
             else:
                 next_page = None
         logger.info('Returning entities from %i pages', page_counter)
 
     def get_paged_entities(self,path):
+        print("getting all paged")
+        return self.__get_all_paged_entities(path)
+
+    def get_paged_owners(self, path):
+        print("getting all paged")
+        return self.__get_all_paged_entities(path)
+
+    def get_paged_groups(self, path):
         print("getting all paged")
         return self.__get_all_paged_entities(path)
 
@@ -84,12 +92,36 @@ def stream_json(clean):
         yield json.dumps(row)
     yield ']'
 
+@app.route("/owners", methods=["GET"])
+def get_owners():
+    if request.method == "GET":
+        path = os.environ.get('groups-owners-odata')
+        entities = data_access_layer.get_paged_owners(path)
+
+    return Response(
+        stream_json(entities),
+        mimetype='application/json'
+    )
+
+
+@app.route("/groups", methods=["GET"])
+def get_groups():
+    if request.method == "GET":
+        path = os.environ.get('groups-odata')
+        entities = data_access_layer.get_paged_groups(path)
+
+    return Response(
+        stream_json(entities),
+        mimetype='application/json'
+    )
 @app.route("/<path:path>", methods=["GET", "POST"])
 def get(path):
     if request.method == "POST":
         path = request.get_json()
+
     if request.method == "GET":
         path = path
+
     entities = data_access_layer.get_paged_entities(path)
 
     return Response(
