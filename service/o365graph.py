@@ -108,13 +108,13 @@ class DataAccess:
                 raise AssertionError ("Unexpected response status code: %d with response text %s"%(req.status_code, req.text))
             dict = dotdictify.dotdictify(json.loads(req.text))
             logger.info(dict)
-            for entity in dict.get(os.environ.get("entities_path")):
-                if path == os.environ.get(('group_url')):
-                    yield get_schema(entity, access_token, path)
+            #for entity in dict.get(os.environ.get("entities_path")):
+                #if path == os.environ.get(('group_url')):
+                #    yield get_schema(entity, access_token, path)
                 # if path == os.environ.get(('user_url')):
                 #     yield get_membership(entity, access_token, path)
-                else:
-                    yield(entity)
+             #   logger.info(entity)
+            yield(dict)
 
             if dict.get(os.environ.get('next_page')) is not None:
                 page_counter+=1
