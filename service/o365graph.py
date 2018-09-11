@@ -50,7 +50,12 @@ class DataAccess:
                 sleep(float(os.environ.get('sleep')))
 
             logger.info("Fetching data from url: %s", next_page)
-            req = requests.get(next_page, params=args, headers={"Authorization": "Bearer " + access_token})
+            if "$skiptoken" not in next_page:
+                req = requests.get(next_page, params=args, headers={"Authorization": "Bearer " + access_token})
+
+            else:
+                 req = requests.get(next_page, headers={"Authorization": "Bearer " + access_token})
+
             if req.status_code != 200:
                 logger.error("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
                 raise AssertionError ("Unexpected response status code: %d with response text %s"%(req.status_code, req.text))
