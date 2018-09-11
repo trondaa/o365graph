@@ -4,10 +4,7 @@ import requests
 import logging
 import json
 import dotdictify
-import urllib
 from time import sleep
-import ast
-
 
 
 app = Flask(__name__)
@@ -16,12 +13,14 @@ format_string = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logger = logging.getLogger('o365graph-service')
 
 # Log to stdout
+
 stdout_handler = logging.StreamHandler()
 stdout_handler.setFormatter(logging.Formatter(format_string))
 logger.addHandler(stdout_handler)
 logger.setLevel(logging.DEBUG)
 
 ##getting token from oauth2
+
 def get_token():
     logger.info("Creating header")
     headers= {}
@@ -37,10 +36,11 @@ def get_token():
     return token
 
 class DataAccess:
+
 #main get function, will probably run most via path:path
-    def __get_all_paged_entities(self, path):
+    def __get_all_paged_entities(self, path, args):
         logger.info("Fetching data from paged url: %s", path)
-        url = os.environ.get("base_url") + path + os.environ.get('groups-odata')
+        url = os.environ.get("base_url") + path
         access_token = get_token()
         next_page = url
         page_counter = 1
@@ -50,25 +50,25 @@ class DataAccess:
                 sleep(float(os.environ.get('sleep')))
 
             logger.info("Fetching data from url: %s", next_page)
-            req = requests.get(next_page, headers={"Authorization": "Bearer " + access_token})
+            req = requests.get(next_page, params=args, headers={"Authorization": "Bearer " + access_token})
             if req.status_code != 200:
                 logger.error("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
                 raise AssertionError ("Unexpected response status code: %d with response text %s"%(req.status_code, req.text))
-            dict = dotdictify.dotdictify(json.loads(req.text))
-            for entity in dict.get(os.environ.get("entities_path")):
+            res = dotdictify.dotdictify(json.loads(req.text))
+            for entity in res.get(os.environ.get("entities_path")):
 
                 yield(entity)
 
-            if dict.get(os.environ.get('next_page')) is not None:
+            if res.get(os.environ.get('next_page')) is not None:
                 page_counter+=1
-                next_page = dict.get(os.environ.get('next_page'))
+                next_page = res.get(os.environ.get('next_page'))
             else:
                 next_page = None
         logger.info('Returning entities from %i pages', page_counter)
 
-    def get_paged_entities(self,path):
+    def get_paged_entities(self,path, args):
         print("getting all paged")
-        return self.__get_all_paged_entities(path)
+        return self.__get_all_paged_entities(path, args)
 
 data_access_layer = DataAccess()
 
@@ -84,13 +84,22 @@ def stream_json(clean):
         yield json.dumps(row)
     yield ']'
 
+# def set_updated(entity, args):
+#     since_path = args.get("since_path")
+#
+#     if since_path is not None:
+#         b = Dotdictify(entity)
+#         entity["_updated"] = b.get(since_path)
+
 @app.route("/<path:path>", methods=["GET", "POST"])
 def get(path):
     if request.method == "POST":
         path = request.get_json()
+
     if request.method == "GET":
         path = path
-    entities = data_access_layer.get_paged_entities(path)
+
+    entities = data_access_layer.get_paged_entities(path, args=request.args)
 
     return Response(
         stream_json(entities),
