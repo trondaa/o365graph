@@ -4,10 +4,7 @@ import requests
 import logging
 import json
 import dotdictify
-import urllib
 from time import sleep
-import ast
-
 
 
 app = Flask(__name__)
@@ -16,12 +13,14 @@ format_string = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logger = logging.getLogger('o365graph-service')
 
 # Log to stdout
+
 stdout_handler = logging.StreamHandler()
 stdout_handler.setFormatter(logging.Formatter(format_string))
 logger.addHandler(stdout_handler)
 logger.setLevel(logging.DEBUG)
 
 ##getting token from oauth2
+
 def get_token():
     logger.info("Creating header")
     headers= {}
@@ -37,8 +36,9 @@ def get_token():
     return token
 
 class DataAccess:
+
 #main get function, will probably run most via path:path
-    def __get_all_paged_entities(self, path):
+    def __get_all_paged_entities(self, path, args):
         logger.info("Fetching data from paged url: %s", path)
         url = os.environ.get("base_url") + path
         access_token = get_token()
@@ -50,7 +50,7 @@ class DataAccess:
                 sleep(float(os.environ.get('sleep')))
 
             logger.info("Fetching data from url: %s", next_page)
-            req = requests.get(next_page, headers={"Authorization": "Bearer " + access_token})
+            req = requests.get(next_page, params=args, headers={"Authorization": "Bearer " + access_token})
             if req.status_code != 200:
                 logger.error("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
                 raise AssertionError ("Unexpected response status code: %d with response text %s"%(req.status_code, req.text))
@@ -66,25 +66,10 @@ class DataAccess:
                 next_page = None
         logger.info('Returning entities from %i pages', page_counter)
 
-    def get_paged_entities(self,path):
+    def get_paged_entities(self,path, args):
         print("getting all paged")
-        return self.__get_all_paged_entities(path)
+        return self.__get_all_paged_entities(path, args)
 
-    def get_paged_owners(self, path):
-        print("getting all paged")
-        return self.__get_all_paged_entities(path)
-
-    def get_paged_groups(self, path):
-        print("getting all paged")
-        return self.__get_all_paged_entities(path)
-
-    def get_paged_users(self, path):
-        print("getting all paged")
-        return self.__get_all_paged_entities(path)
-
-    def get_paged_sites(self, path):
-        print("getting all paged")
-        return self.__get_all_paged_entities(path)
 data_access_layer = DataAccess()
 
 
@@ -99,49 +84,13 @@ def stream_json(clean):
         yield json.dumps(row)
     yield ']'
 
-@app.route("/owners", methods=["GET"])
-def get_owners():
-    if request.method == "GET":
-        path = os.environ.get('groups-owners-odata')
-        entities = data_access_layer.get_paged_owners(path)
+# def set_updated(entity, args):
+#     since_path = args.get("since_path")
+#
+#     if since_path is not None:
+#         b = Dotdictify(entity)
+#         entity["_updated"] = b.get(since_path)
 
-    return Response(
-        stream_json(entities),
-        mimetype='application/json'
-    )
-
-@app.route("/users", methods=["GET"])
-def get_users():
-    if request.method == "GET":
-        path = os.environ.get('users-odata')
-        entities = data_access_layer.get_paged_users(path)
-
-    return Response(
-        stream_json(entities),
-        mimetype='application/json'
-    )
-
-@app.route("/sites", methods=["GET"])
-def get_sites():
-    if request.method == "GET":
-        path = os.environ.get('sites-odata')
-        entities = data_access_layer.get_paged_users(path)
-
-    return Response(
-        stream_json(entities),
-        mimetype='application/json'
-    )
-
-@app.route("/groups", methods=["GET"])
-def get_groups():
-    if request.method == "GET":
-        path = os.environ.get('groups-odata')
-        entities = data_access_layer.get_paged_groups(path)
-
-    return Response(
-        stream_json(entities),
-        mimetype='application/json'
-    )
 @app.route("/<path:path>", methods=["GET", "POST"])
 def get(path):
     if request.method == "POST":
@@ -150,7 +99,7 @@ def get(path):
     if request.method == "GET":
         path = path
 
-    entities = data_access_layer.get_paged_entities(path)
+    entities = data_access_layer.get_paged_entities(path, args=request.args)
 
     return Response(
         stream_json(entities),
