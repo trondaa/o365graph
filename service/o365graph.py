@@ -78,6 +78,13 @@ class DataAccess:
         print("getting all paged")
         return self.__get_all_paged_entities(path)
 
+    def get_paged_users(self, path):
+        print("getting all paged")
+        return self.__get_all_paged_entities(path)
+
+    def get_paged_sites(self, path):
+        print("getting all paged")
+        return self.__get_all_paged_entities(path)
 data_access_layer = DataAccess()
 
 
@@ -103,6 +110,27 @@ def get_owners():
         mimetype='application/json'
     )
 
+@app.route("/users", methods=["GET"])
+def get_users():
+    if request.method == "GET":
+        path = os.environ.get('users-odata')
+        entities = data_access_layer.get_paged_users(path)
+
+    return Response(
+        stream_json(entities),
+        mimetype='application/json'
+    )
+
+@app.route("/sites", methods=["GET"])
+def get_sites():
+    if request.method == "GET":
+        path = os.environ.get('sites-odata')
+        entities = data_access_layer.get_paged_users(path)
+
+    return Response(
+        stream_json(entities),
+        mimetype='application/json'
+    )
 
 @app.route("/groups", methods=["GET"])
 def get_groups():
