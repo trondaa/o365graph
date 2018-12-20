@@ -30,6 +30,7 @@ def get_token():
         "grant_type": os.environ.get('grant_type'),
         "resource": os.environ.get('resource')
     }
+    logger.info(payload)
     resp = requests.post(url=os.environ.get('token_url'), data=payload, headers=headers).json()
     token = dotdictify.dotdictify(resp).access_token
     logger.info("Received access token from " + os.environ.get('token_url'))
@@ -96,6 +97,8 @@ def stream_json(clean):
 #         b = Dotdictify(entity)
 #         entity["_updated"] = b.get(since_path)
 
+
+
 @app.route("/<path:path>", methods=["GET", "POST"])
 def get(path):
     if request.method == "POST":
@@ -108,6 +111,31 @@ def get(path):
 
     return Response(
         stream_json(entities),
+        mimetype='application/json'
+    )
+
+@app.route("/siteurl", methods=["POST"])
+def getsite():
+    entities = request.get_json()
+    logger.info(entities)
+    access_token = get_token()
+    for entity in entities:
+        url = "https://graph.microsoft.com/v1.0/groups/" + entity['id'] + "/drive/root/webUrl"
+        req= requests.get(url=url, headers={"Authorization": "Bearer " + access_token})
+        if req.status_code != 200:
+            if req.status_code == 404:
+                res['_id'] = entity['id']
+                res['value'] = None
+            else:
+                logger.error("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
+                raise AssertionError(
+                    "Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
+        else:
+            res = json.loads(req.text)
+            res['_id'] = entity['id']
+
+    return Response(
+        json.dumps(res),
         mimetype='application/json'
     )
 
