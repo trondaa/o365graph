@@ -120,11 +120,11 @@ def getsite():
     logger.info(entities)
     access_token = get_token()
     for entity in entities:
-        url = "https://graph.microsoft.com/v1.0/groups/" + entity['id'] + "/drive/root/webUrl"
+        url = "https://graph.microsoft.com/v1.0/groups/" + entity['o365-siteurl:id'] + "/drive/root/webUrl"
         req= requests.get(url=url, headers={"Authorization": "Bearer " + access_token})
         if req.status_code != 200:
             if req.status_code == 404:
-                res['_id'] = entity['id']
+                res['_id'] = entity['o365-siteurl:id']
                 res['value'] = None
             else:
                 logger.error("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
@@ -132,7 +132,7 @@ def getsite():
                     "Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
         else:
             res = json.loads(req.text)
-            res['_id'] = entity['id']
+            res['_id'] = entity['o365-siteurl:id']
 
     return Response(
         json.dumps(res),
