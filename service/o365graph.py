@@ -140,10 +140,10 @@ def getsite():
             res = json.loads(req.text)
             res['_id'] = entity['o365-siteurl:id']
 
-        return Response(
-            json.dumps(res),
-            mimetype='application/json'
-        )
+    return Response(
+        json.dumps(res),
+        mimetype='application/json'
+    )
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', threaded=True, port=os.environ.get('port',5000))
