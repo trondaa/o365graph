@@ -1,5 +1,5 @@
 FROM python:3-alpine
-MAINTAINER Ashkan Vahidishams "ashkan.vahidishams@sesam.io"
+MAINTAINER Philip Ahlberg "philip.ahlberg@sesam.io"
 COPY ./service /service
 
 RUN pip install --upgrade pip
