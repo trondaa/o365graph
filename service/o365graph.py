@@ -30,7 +30,7 @@ def get_token():
         "grant_type": os.environ.get('grant_type'),
         "resource": os.environ.get('resource')
     }
-    logger.info(payload)
+    #logger.info(payload)
     resp = requests.post(url=os.environ.get('token_url'), data=payload, headers=headers).json()
     token = dotdictify.dotdictify(resp).access_token
     logger.info("Received access token from " + os.environ.get('token_url'))
@@ -97,6 +97,11 @@ def stream_json(clean):
 #         b = Dotdictify(entity)
 #         entity["_updated"] = b.get(since_path)
 
+# def rename(entity):
+#     for key, value in entity.items():
+#         res = dict(entity[key.split(':')[1]]=entity.pop(key))
+#     logger.info(res)
+#     return entity['id']
 
 
 @app.route("/<path:path>", methods=["GET", "POST"])
@@ -120,11 +125,12 @@ def getsite():
     logger.info(entities)
     access_token = get_token()
     for entity in entities:
-        url = "https://graph.microsoft.com/v1.0/groups/" + entity['o365-siteurl:id'] + "/drive/root/webUrl"
+        url = "https://graph.microsoft.com/v1.0/groups/" + entity['id'] + "/drive/root/webUrl"
         req= requests.get(url=url, headers={"Authorization": "Bearer " + access_token})
         if req.status_code != 200:
             if req.status_code == 404:
-                res['_id'] = entity['o365-siteurl:id']
+                res = json.loads(req.text)
+                res['_id'] = entity['id']
                 res['value'] = None
             else:
                 logger.error("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
@@ -132,12 +138,12 @@ def getsite():
                     "Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
         else:
             res = json.loads(req.text)
-            res['_id'] = entity['o365-siteurl:id']
+            res['_id'] = entity['id']
 
-    return Response(
-        json.dumps(res),
-        mimetype='application/json'
-    )
+        return Response(
+            json.dumps(res),
+            mimetype='application/json'
+        )
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', threaded=True, port=os.environ.get('port',5000))
