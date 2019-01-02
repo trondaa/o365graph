@@ -125,7 +125,7 @@ def getsite():
     logger.info(entities)
     access_token = get_token()
     for entity in entities:
-        url = "https://graph.microsoft.com/v1.0/groups/" + entity['o365-siteurl:id'] + "/drive/root/webUrl"
+        url = "https://graph.microsoft.com/v1.0/groups/" + entity['o365-siteurl:id'] + "/sites/root"
         req= requests.get(url=url, headers={"Authorization": "Bearer " + access_token})
         if req.status_code != 200:
             if req.status_code == 404:
