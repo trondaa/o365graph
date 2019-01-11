@@ -124,26 +124,38 @@ def getsite():
     entities = request.get_json()
     logger.info(entities)
     access_token = get_token()
+
     for entity in entities:
-        url = "https://graph.microsoft.com/v1.0/groups/" + entity['o365-siteurl:id'] + "/sites/root"
+        url = "https://graph.microsoft.com/v1.0/groups/" + set_group_id(entity) + "/sites/root"
         req= requests.get(url=url, headers={"Authorization": "Bearer " + access_token})
         if req.status_code != 200:
             if req.status_code == 404:
                 res = json.loads(req.text)
-                res['_id'] = entity['o365-siteurl:id']
-                res['value'] = None
+                res['_id'] = set_group_id(entity)
+            if req.status_code == 429:
+                break
+
             else:
-                logger.error("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
+                logger.info("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
                 raise AssertionError(
                     "Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
-        else:
-            res = json.loads(req.text)
-            res['_id'] = entity['o365-siteurl:id']
 
-    return Response(
-        json.dumps(res),
-        mimetype='application/json'
-    )
+        try:
+            entities = json.loads(req.text)
+        except ValueError:
+            logger.info("Could not find entity for id: %s", key)
+            return None
+
+        return entities
+    return Response(stream_json(entities))
+
+def set_group_id(entity):
+    for k, v in entity.items():
+        if str(k).split(":")[1] == "id":
+            groupid = v
+            logger.info(groupid)
+    return groupid
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', threaded=True, port=os.environ.get('port',5000))
