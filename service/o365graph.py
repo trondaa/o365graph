@@ -95,6 +95,7 @@ class DataAccess:
                 logger.info('no url')
             else:
                 res = dotdictify.dotdictify(json.loads(req.text))
+                res['_id']=entity['id']
                 final_list.append(res.copy())
 
         try:
