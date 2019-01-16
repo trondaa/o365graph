@@ -157,6 +157,8 @@ def set_group_id(entity):
         if k.split(":")[1] == "id":
             groupid = v
             logger.info(groupid)
+        else:
+            pass
     return groupid
 
 
