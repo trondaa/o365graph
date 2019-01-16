@@ -88,6 +88,7 @@ class DataAccess:
         logger.info('fetching site urls')
         access_token = get_token()
         final_list = []
+        res = {}
         for entity in posted_entities:
             url = "https://graph.microsoft.com/v1.0/groups/" + set_group_id(entity) + "/sites/root"
             req = requests.get(url=url, headers={"Authorization": "Bearer " + access_token})
@@ -95,7 +96,8 @@ class DataAccess:
                 logger.info('no url')
             else:
                 res = dotdictify.dotdictify(json.loads(req.text))
-                res['_id']=entity['id']
+                res['_id'] = set_group_id(entity)
+
                 final_list.append(res.copy())
 
         try:
