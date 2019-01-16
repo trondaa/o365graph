@@ -79,10 +79,10 @@ class DataAccess:
 data_access_layer = DataAccess()
 
 
-def stream_json(clean):
+def stream_json(entities):
     first = True
     yield '['
-    for i, row in enumerate(clean):
+    for i, row in enumerate(entities):
         if not first:
             yield ','
         else:
@@ -140,18 +140,21 @@ def getsite():
                 raise AssertionError(
                     "Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
 
+            return entity
         try:
-            entities = json.loads(req.text)
+            entity = json.loads(req.text)
+            entities = []
+            entities.append(entity)
+            return Response(stream_json(entities),
+                            mimetype='application/json')
         except ValueError:
             logger.info("Could not find entity for id: %s", key)
             return None
 
-        return entities
-    return Response(stream_json(entities))
 
 def set_group_id(entity):
     for k, v in entity.items():
-        if str(k).split(":")[1] == "id":
+        if k.split(":")[1] == "id":
             groupid = v
             logger.info(groupid)
     return groupid
