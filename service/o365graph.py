@@ -154,7 +154,7 @@ def getsite():
 
 def set_group_id(entity):
     for k, v in entity.items():
-        if k.split(":")[1] == "id":
+        if k.split(":")[-1] == "id":
             groupid = v
             logger.info(groupid)
         else:
