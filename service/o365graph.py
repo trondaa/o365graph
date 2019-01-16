@@ -5,6 +5,7 @@ import logging
 import json
 import dotdictify
 from time import sleep
+from requests.exceptions import HTTPError
 
 
 app = Flask(__name__)
@@ -128,10 +129,12 @@ def getsite():
     for entity in entities:
         url = "https://graph.microsoft.com/v1.0/groups/" + set_group_id(entity) + "/sites/root"
         req= requests.get(url=url, headers={"Authorization": "Bearer " + access_token})
+
         if req.status_code != 200:
             if req.status_code == 404:
-                res = json.loads(req.text)
-                res['_id'] = set_group_id(entity)
+                entity = json.loads(req.text)
+                entity['_id'] = set_group_id(entity)
+                return entity
             if req.status_code == 429:
                 break
 
@@ -140,7 +143,6 @@ def getsite():
                 raise AssertionError(
                     "Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
 
-            return entity
         try:
             entity = json.loads(req.text)
             entities = []
@@ -148,7 +150,7 @@ def getsite():
             return Response(stream_json(entities),
                             mimetype='application/json')
         except ValueError:
-            logger.info("Could not find entity for id: %s", key)
+            logger.info("Could not find entity for id: %s", groupid)
             return None
 
 
