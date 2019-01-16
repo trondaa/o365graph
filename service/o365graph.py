@@ -20,8 +20,18 @@ stdout_handler.setFormatter(logging.Formatter(format_string))
 logger.addHandler(stdout_handler)
 logger.setLevel(logging.DEBUG)
 
-##getting token from oauth2
 
+
+def set_group_id(entity):
+    for k, v in entity.items():
+        if k.split(":")[-1] == "id":
+            groupid = v
+            logger.info(groupid)
+        else:
+            pass
+    return groupid
+
+##getting token from oauth2
 def get_token():
     logger.info("Creating header")
     headers= {}
@@ -40,6 +50,7 @@ def get_token():
 class DataAccess:
 
 #main get function, will probably run most via path:path
+
     def __get_all_paged_entities(self, path, args):
         logger.info("Fetching data from paged url: %s", path)
         url = os.environ.get("base_url") + path
@@ -73,9 +84,33 @@ class DataAccess:
                 next_page = None
         logger.info('Returning entities from %i pages', page_counter)
 
+    def __get_all_siteurls(self, posted_entities):
+        logger.info('fetching site urls')
+        access_token = get_token()
+        final_list = []
+        for entity in posted_entities:
+            url = "https://graph.microsoft.com/v1.0/groups/" + set_group_id(entity) + "/sites/root"
+            req = requests.get(url=url, headers={"Authorization": "Bearer " + access_token})
+            if req.status_code != 200:
+                logger.info('no url')
+            else:
+                res = dotdictify.dotdictify(json.loads(req.text))
+                final_list.append(res.copy())
+
+        try:
+            for entity in final_list:
+
+                yield(entity)
+        except Exception:
+            logger.info('some wierd error occured')
+
     def get_paged_entities(self,path, args):
         print("getting all paged")
         return self.__get_all_paged_entities(path, args)
+
+    def get_siteurls(self,posted_entities):
+        print("getting all siteurls")
+        return self.__get_all_siteurls(posted_entities)
 
 data_access_layer = DataAccess()
 
@@ -122,46 +157,13 @@ def get(path):
 
 @app.route("/siteurl", methods=["POST"])
 def getsite():
-    entities = request.get_json()
-    logger.info(entities)
-    access_token = get_token()
+    posted_entities = request.get_json()
+    entities = data_access_layer.get_siteurls(posted_entities)
 
-    for entity in entities:
-        url = "https://graph.microsoft.com/v1.0/groups/" + set_group_id(entity) + "/sites/root"
-        req= requests.get(url=url, headers={"Authorization": "Bearer " + access_token})
-
-        if req.status_code != 200:
-            if req.status_code == 404:
-                entity = json.loads(req.text)
-                entity['_id'] = set_group_id(entity)
-                return entity
-            if req.status_code == 429:
-                break
-
-            else:
-                logger.info("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
-                raise AssertionError(
-                    "Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
-
-        try:
-            entity = json.loads(req.text)
-            entities = []
-            entities.append(entity)
-            return Response(stream_json(entities),
-                            mimetype='application/json')
-        except ValueError:
-            logger.info("Could not find entity for id: %s", groupid)
-            return None
-
-
-def set_group_id(entity):
-    for k, v in entity.items():
-        if k.split(":")[-1] == "id":
-            groupid = v
-            logger.info(groupid)
-        else:
-            pass
-    return groupid
+    return Response(
+        stream_json(entities),
+        mimetype='application/json'
+    )
 
 
 if __name__ == '__main__':
