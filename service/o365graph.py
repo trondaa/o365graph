@@ -87,8 +87,6 @@ class DataAccess:
     def __get_all_siteurls(self, posted_entities):
         logger.info('fetching site urls')
         access_token = get_token()
-        final_list = []
-        res = {}
         for entity in posted_entities:
             url = "https://graph.microsoft.com/v1.0/groups/" + set_group_id(entity) + "/sites/root"
             req = requests.get(url=url, headers={"Authorization": "Bearer " + access_token})
@@ -98,14 +96,7 @@ class DataAccess:
                 res = dotdictify.dotdictify(json.loads(req.text))
                 res['_id'] = set_group_id(entity)
 
-                final_list.append(res.copy())
-
-        try:
-            for entity in final_list:
-
-                yield(entity)
-        except Exception:
-            logger.info('some wierd error occured')
+                yield res
 
     def get_paged_entities(self,path, args):
         print("getting all paged")
@@ -128,6 +119,7 @@ def stream_json(entities):
             first = False
         yield json.dumps(row)
     yield ']'
+
 
 # def set_updated(entity, args):
 #     since_path = args.get("since_path")
