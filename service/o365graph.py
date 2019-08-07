@@ -5,6 +5,7 @@ import logging
 import json
 import dotdictify
 from time import sleep
+from requests.exceptions import HTTPError
 
 
 app = Flask(__name__)
@@ -19,8 +20,18 @@ stdout_handler.setFormatter(logging.Formatter(format_string))
 logger.addHandler(stdout_handler)
 logger.setLevel(logging.DEBUG)
 
-##getting token from oauth2
 
+
+def set_group_id(entity):
+    for k, v in entity.items():
+        if k.split(":")[-1] == "id":
+            groupid = v
+            logger.info(groupid)
+        else:
+            pass
+    return groupid
+
+##getting token from oauth2
 def get_token():
     logger.info("Creating header")
     headers= {}
@@ -30,7 +41,7 @@ def get_token():
         "grant_type": os.environ.get('grant_type'),
         "resource": os.environ.get('resource')
     }
-    logger.info(payload)
+    #logger.info(payload)
     resp = requests.post(url=os.environ.get('token_url'), data=payload, headers=headers).json()
     token = dotdictify.dotdictify(resp).access_token
     logger.info("Received access token from " + os.environ.get('token_url'))
@@ -39,6 +50,7 @@ def get_token():
 class DataAccess:
 
 #main get function, will probably run most via path:path
+
     def __get_all_paged_entities(self, path, args):
         logger.info("Fetching data from paged url: %s", path)
         url = os.environ.get("base_url") + path
@@ -72,23 +84,42 @@ class DataAccess:
                 next_page = None
         logger.info('Returning entities from %i pages', page_counter)
 
+    def __get_all_siteurls(self, posted_entities):
+        logger.info('fetching site urls')
+        access_token = get_token()
+        for entity in posted_entities:
+            url = "https://graph.microsoft.com/v1.0/groups/" + set_group_id(entity) + "/sites/root"
+            req = requests.get(url=url, headers={"Authorization": "Bearer " + access_token})
+            if req.status_code != 200:
+                logger.info('no url')
+            else:
+                res = dotdictify.dotdictify(json.loads(req.text))
+                res['_id'] = set_group_id(entity)
+
+                yield res
+
     def get_paged_entities(self,path, args):
         print("getting all paged")
         return self.__get_all_paged_entities(path, args)
 
+    def get_siteurls(self,posted_entities):
+        print("getting all siteurls")
+        return self.__get_all_siteurls(posted_entities)
+
 data_access_layer = DataAccess()
 
 
-def stream_json(clean):
+def stream_json(entities):
     first = True
     yield '['
-    for i, row in enumerate(clean):
+    for i, row in enumerate(entities):
         if not first:
             yield ','
         else:
             first = False
         yield json.dumps(row)
     yield ']'
+
 
 # def set_updated(entity, args):
 #     since_path = args.get("since_path")
@@ -97,6 +128,11 @@ def stream_json(clean):
 #         b = Dotdictify(entity)
 #         entity["_updated"] = b.get(since_path)
 
+# def rename(entity):
+#     for key, value in entity.items():
+#         res = dict(entity[key.split(':')[1]]=entity.pop(key))
+#     logger.info(res)
+#     return entity['id']
 
 
 @app.route("/<path:path>", methods=["GET", "POST"])
@@ -116,28 +152,14 @@ def get(path):
 
 @app.route("/siteurl", methods=["POST"])
 def getsite():
-    entities = request.get_json()
-    logger.info(entities)
-    access_token = get_token()
-    for entity in entities:
-        url = "https://graph.microsoft.com/v1.0/groups/" + entity['id'] + "/drive/root/webUrl"
-        req= requests.get(url=url, headers={"Authorization": "Bearer " + access_token})
-        if req.status_code != 200:
-            if req.status_code == 404:
-                res['_id'] = entity['id']
-                res['value'] = None
-            else:
-                logger.error("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
-                raise AssertionError(
-                    "Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
-        else:
-            res = json.loads(req.text)
-            res['_id'] = entity['id']
+    posted_entities = request.get_json()
+    entities = data_access_layer.get_siteurls(posted_entities)
 
     return Response(
-        json.dumps(res),
+        stream_json(entities),
         mimetype='application/json'
     )
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', threaded=True, port=os.environ.get('port',5000))
