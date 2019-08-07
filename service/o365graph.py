@@ -1,26 +1,59 @@
 from flask import Flask, request, Response
 import os
+import sys
 import requests
 import logging
 import json
-import dotdictify
+from dotdictify import dotdictify
 from time import sleep
 from requests.exceptions import HTTPError
 
 
 app = Flask(__name__)
-logger = None
+
+# Environment variables
+required_env_vars = ["client_id", "client_secret", "grant_type", "resource", "entities_path", "next_page"]
+optional_env_vars = ["log_level", "base_url", "sleep", "port"]
+
+
+class AppConfig(object):
+    pass
+
+
+config = AppConfig()
+
+# load variables
+missing_env_vars = list()
+for env_var in required_env_vars:
+    value = os.getenv(env_var)
+    if not value:
+        missing_env_vars.append(env_var)
+    setattr(config, env_var, value)
+
+for env_var in optional_env_vars:
+    value = os.getenv(env_var)
+    if not value:
+        value = None
+    setattr(config, env_var, value)
+
+# Set up logging
 format_string = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logger = logging.getLogger('o365graph-service')
-
-# Log to stdout
-
 stdout_handler = logging.StreamHandler()
 stdout_handler.setFormatter(logging.Formatter(format_string))
 logger.addHandler(stdout_handler)
-logger.setLevel(logging.DEBUG)
+
+loglevel = getattr(config, "log_level", "INFO")
+level = logging.getLevelName(loglevel.upper())
+if not isinstance(level, int):
+    logger.warning("Unsupported log level defined. Using default level 'INFO'")
+    level = logging.INFO
+logger.setLevel(level)
 
 
+if len(missing_env_vars) != 0:
+    logger.error(f"Missing the following required environment variable(s) {missing_env_vars}")
+    sys.exit(1)
 
 def set_group_id(entity):
     for k, v in entity.items():
@@ -33,18 +66,18 @@ def set_group_id(entity):
 
 ##getting token from oauth2
 def get_token():
-    logger.info("Creating header")
-    headers= {}
     payload = {
-        "client_id":os.environ.get('client_id'),
-        "client_secret":os.environ.get('client_secret'),
-        "grant_type": os.environ.get('grant_type'),
-        "resource": os.environ.get('resource')
+        "client_id": config.client_id,
+        "client_secret": config.client_secret,
+        "grant_type": config.grant_type,
+        "resource": config.resource
     }
-    #logger.info(payload)
-    resp = requests.post(url=os.environ.get('token_url'), data=payload, headers=headers).json()
-    token = dotdictify.dotdictify(resp).access_token
-    logger.info("Received access token from " + os.environ.get('token_url'))
+    resp = requests.post(url=config.token_url, data=payload)
+    if not resp.ok:
+        logger.error(f"Access token request failed. Error: {resp.content}")
+        raise
+    token = dotdictify(resp.json()).access_token
+    logger.info("Received access token from " + config.token_url)
     return token
 
 class DataAccess:
@@ -53,14 +86,14 @@ class DataAccess:
 
     def __get_all_paged_entities(self, path, args):
         logger.info("Fetching data from paged url: %s", path)
-        url = os.environ.get("base_url") + path
+        url = config.base_url + path
         access_token = get_token()
         next_page = url
         page_counter = 1
         while next_page is not None:
-            if os.environ.get('sleep') is not None:
-                logger.info("sleeping for %s milliseconds", os.environ.get('sleep') )
-                sleep(float(os.environ.get('sleep')))
+            if config.sleep is not None:
+                logger.info("sleeping for %s milliseconds", config.sleep )
+                sleep(float(config.sleep))
 
             logger.info("Fetching data from url: %s", next_page)
             if "$skiptoken" not in next_page:
@@ -72,14 +105,14 @@ class DataAccess:
             if req.status_code != 200:
                 logger.error("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
                 raise AssertionError ("Unexpected response status code: %d with response text %s"%(req.status_code, req.text))
-            res = dotdictify.dotdictify(json.loads(req.text))
-            for entity in res.get(os.environ.get("entities_path")):
+            res = dotdictify(json.loads(req.text))
+            for entity in res.get(config.entities_path):
 
                 yield(entity)
 
-            if res.get(os.environ.get('next_page')) is not None:
+            if res.get(config.next_page) is not None:
                 page_counter+=1
-                next_page = res.get(os.environ.get('next_page'))
+                next_page = res.get(config.next_page)
             else:
                 next_page = None
         logger.info('Returning entities from %i pages', page_counter)
@@ -93,7 +126,7 @@ class DataAccess:
             if req.status_code != 200:
                 logger.info('no url')
             else:
-                res = dotdictify.dotdictify(json.loads(req.text))
+                res = dotdictify(json.loads(req.text))
                 res['_id'] = set_group_id(entity)
 
                 yield res
@@ -162,4 +195,4 @@ def getsite():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', threaded=True, port=os.environ.get('port',5000))
+    app.run(debug=True, host='0.0.0.0', threaded=True, port=getattr(config, 'port', 5000))
