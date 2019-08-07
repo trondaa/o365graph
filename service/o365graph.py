@@ -55,6 +55,7 @@ if len(missing_env_vars) != 0:
     logger.error(f"Missing the following required environment variable(s) {missing_env_vars}")
     sys.exit(1)
 
+
 def set_group_id(entity):
     for k, v in entity.items():
         if k.split(":")[-1] == "id":
@@ -64,29 +65,13 @@ def set_group_id(entity):
             pass
     return groupid
 
-##getting token from oauth2
-def get_token():
-    payload = {
-        "client_id": config.client_id,
-        "client_secret": config.client_secret,
-        "grant_type": config.grant_type,
-        "resource": config.resource
-    }
-    resp = requests.post(url=config.token_url, data=payload)
-    if not resp.ok:
-        logger.error(f"Access token request failed. Error: {resp.content}")
-        raise
-    token = dotdictify(resp.json()).access_token
-    logger.info("Received access token from " + config.token_url)
-    return token
 
-class DataAccess:
-
-#main get function, will probably run most via path:path
+class Graph:
 
     def __init__(self):
         self.session = None
         self.auth_header = None
+        self.graph_url = config.base_url or "https://graph.microsoft.com/v1.0/"
 
     def get_token(self):
         payload = {
@@ -117,45 +102,46 @@ class DataAccess:
         return resp
 
     def __get_all_paged_entities(self, path, args):
-        logger.info("Fetching data from paged url: %s", path)
-        url = config.base_url + path
+        logger.info(f"Fetching data from paged url: {path}")
+        url = self.graph_url + path
         next_page = url
         page_counter = 1
         while next_page is not None:
             if config.sleep is not None:
-                logger.info("sleeping for %s milliseconds", config.sleep)
+                logger.info(f"sleeping for {config.sleep} milliseconds")
                 sleep(float(config.sleep))
 
-            logger.info("Fetching data from url: %s", next_page)
+            logger.info(f"Fetching data from url: {next_page}")
             if "$skiptoken" not in next_page:
                 req = self.request("GET", next_page, params=args)
             else:
                 req = self.request("GET", next_page)
 
-            if req.status_code != 200:
-                logger.error("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
-                raise AssertionError ("Unexpected response status code: %d with response text %s"%(req.status_code, req.text))
-            res = dotdictify(json.loads(req.text))
+            if not req.ok:
+                error_text = f"Unexpected response status code: {req.status_code} with response text {req.text}"
+                logger.error(error_text)
+                raise AssertionError(error_text)
+            res = dotdictify(req.json())
             for entity in res.get(config.entities_path):
 
                 yield(entity)
 
             if res.get(config.next_page) is not None:
-                page_counter+=1
+                page_counter += 1
                 next_page = res.get(config.next_page)
             else:
                 next_page = None
-        logger.info('Returning entities from %i pages', page_counter)
+        logger.info(f"Returning entities from {page_counter} pages")
 
     def __get_all_siteurls(self, posted_entities):
         logger.info('fetching site urls')
         for entity in posted_entities:
-            url = "https://graph.microsoft.com/v1.0/groups/" + set_group_id(entity) + "/sites/root"
+            url = self.graph_url + "groups/" + set_group_id(entity) + "/sites/root"
             req = self.request("GET", url)
-            if req.status_code != 200:
+            if not req.ok:
                 logger.info('no url')
             else:
-                res = dotdictify(json.loads(req.text))
+                res = dotdictify(req.json())
                 res['_id'] = set_group_id(entity)
 
                 yield res
@@ -169,7 +155,7 @@ class DataAccess:
         return self.__get_all_siteurls(posted_entities)
 
 
-data_access_layer = DataAccess()
+data_access_layer = Graph()
 
 
 def stream_json(entities):
@@ -212,6 +198,7 @@ def get(path):
         stream_json(entities),
         mimetype='application/json'
     )
+
 
 @app.route("/siteurl", methods=["POST"])
 def getsite():
