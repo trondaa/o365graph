@@ -84,23 +84,53 @@ class DataAccess:
 
 #main get function, will probably run most via path:path
 
+    def __init__(self):
+        self.session = None
+        self.auth_header = None
+
+    def get_token(self):
+        payload = {
+            "client_id": config.client_id,
+            "client_secret": config.client_secret,
+            "grant_type": os.environ.get('grant_type'),
+            "resource": config.resource
+        }
+        resp = requests.post(url=config.token_url, data=payload)
+        if not resp.ok:
+            logger.error(f"Access token request failed. Error: {resp.content}")
+            raise
+        access_token = resp.json().get("access_token")
+        self.auth_header = {"Authorization": "Bearer " + access_token}
+
+    def request(self, method, url, **kwargs):
+        if not self.session:
+            self.session = requests.Session()
+            self.get_token()
+
+        req = requests.Request(method, url, headers=self.auth_header, **kwargs)
+
+        resp = self.session.send(req)
+        if resp.status_code == 401:
+            self.get_token()
+            resp = self.session.send(req)
+
+        return resp
+
     def __get_all_paged_entities(self, path, args):
         logger.info("Fetching data from paged url: %s", path)
         url = config.base_url + path
-        access_token = get_token()
         next_page = url
         page_counter = 1
         while next_page is not None:
             if config.sleep is not None:
-                logger.info("sleeping for %s milliseconds", config.sleep )
+                logger.info("sleeping for %s milliseconds", config.sleep)
                 sleep(float(config.sleep))
 
             logger.info("Fetching data from url: %s", next_page)
             if "$skiptoken" not in next_page:
-                req = requests.get(next_page, params=args, headers={"Authorization": "Bearer " + access_token})
-
+                req = self.request("GET", next_page, params=args)
             else:
-                 req = requests.get(next_page, headers={"Authorization": "Bearer " + access_token})
+                req = self.request("GET", next_page)
 
             if req.status_code != 200:
                 logger.error("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
@@ -119,10 +149,9 @@ class DataAccess:
 
     def __get_all_siteurls(self, posted_entities):
         logger.info('fetching site urls')
-        access_token = get_token()
         for entity in posted_entities:
             url = "https://graph.microsoft.com/v1.0/groups/" + set_group_id(entity) + "/sites/root"
-            req = requests.get(url=url, headers={"Authorization": "Bearer " + access_token})
+            req = self.request("GET", url)
             if req.status_code != 200:
                 logger.info('no url')
             else:
@@ -138,6 +167,7 @@ class DataAccess:
     def get_siteurls(self,posted_entities):
         print("getting all siteurls")
         return self.__get_all_siteurls(posted_entities)
+
 
 data_access_layer = DataAccess()
 
