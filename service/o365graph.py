@@ -1,4 +1,4 @@
-from flask import Flask, request, Response
+from flask import Flask, request, Response, abort
 import os
 import sys
 import requests
@@ -6,14 +6,14 @@ import logging
 import json
 from dotdictify import dotdictify
 from time import sleep
-from requests.exceptions import HTTPError
+from urllib.parse import urlparse
 
 
 app = Flask(__name__)
 
 # Environment variables
-required_env_vars = ["client_id", "client_secret", "grant_type", "resource", "entities_path", "next_page"]
-optional_env_vars = ["log_level", "base_url", "sleep", "port"]
+required_env_vars = ["client_id", "client_secret", "grant_type", "resource", "entities_path", "next_page", "token_url"]
+optional_env_vars = ["log_level", "base_url", "sleep", "port", "sharepoint_url"]
 
 
 class AppConfig(object):
@@ -32,9 +32,8 @@ for env_var in required_env_vars:
 
 for env_var in optional_env_vars:
     value = os.getenv(env_var)
-    if not value:
-        value = None
-    setattr(config, env_var, value)
+    if value:
+        setattr(config, env_var, value)
 
 # Set up logging
 format_string = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -71,15 +70,16 @@ class Graph:
     def __init__(self):
         self.session = None
         self.auth_header = None
-        self.graph_url = config.base_url or "https://graph.microsoft.com/v1.0/"
+        self.graph_url = getattr(config, "base_url", None) or "https://graph.microsoft.com/v1.0/"
 
     def get_token(self):
         payload = {
             "client_id": config.client_id,
             "client_secret": config.client_secret,
-            "grant_type": os.environ.get('grant_type'),
+            "grant_type": config.grant_type,
             "resource": config.resource
         }
+        logger.info("Acquiring new access token")
         resp = requests.post(url=config.token_url, data=payload)
         if not resp.ok:
             logger.error(f"Access token request failed. Error: {resp.content}")
@@ -94,10 +94,10 @@ class Graph:
 
         req = requests.Request(method, url, headers=self.auth_header, **kwargs)
 
-        resp = self.session.send(req)
+        resp = self.session.send(req.prepare())
         if resp.status_code == 401:
             self.get_token()
-            resp = self.session.send(req)
+            resp = self.session.send(req.prepare())
 
         return resp
 
@@ -107,7 +107,7 @@ class Graph:
         next_page = url
         page_counter = 1
         while next_page is not None:
-            if config.sleep is not None:
+            if hasattr(config, "sleep"):
                 logger.info(f"sleeping for {config.sleep} milliseconds")
                 sleep(float(config.sleep))
 
@@ -146,13 +146,68 @@ class Graph:
 
                 yield res
 
-    def get_paged_entities(self,path, args):
+    def get_paged_entities(self, path, args):
         print("getting all paged")
         return self.__get_all_paged_entities(path, args)
 
-    def get_siteurls(self,posted_entities):
+    def get_siteurls(self, posted_entities):
         print("getting all siteurls")
         return self.__get_all_siteurls(posted_entities)
+
+    def _get_sharepoint_site_id(self, site):
+        """Find the sharepoint id for a given site or team based on site's relative url"""
+
+        url = self.graph_url + "sites/" + site
+        logger.debug(f"sharepoint site id url: '{url}'")
+        resp = self.request("GET", url)
+        if not resp.ok:
+            logger.error(f"Unable to determine site id for site '{site}'. Error: {resp.text}")
+            return None
+        return resp.json().get("id")
+
+    def _get_site_documents_drive_url(self, site):
+        """Find the drive id for the sharepoint site/team documents directory"""
+
+        site_id = self._get_sharepoint_site_id(site)
+        if site_id:
+            url = self.graph_url + "/sites/" + site_id + "/drive"
+            logger.debug(f"site documents drive url: '{url}'")
+            resp = self.request("GET", url)
+            if not resp.ok:
+                logger.error(f"Unable to determine documents drive id for site '{site}'. Error: {resp.text}")
+                return None
+            drive_id = resp.json().get("id")
+            drive_url = url + "s/" + drive_id + "/root:/"
+            return drive_url
+        logger.error("Unable to determine documents drive id without a valid site_id")
+        return None
+
+    def _get_file_download_url(self, path, site):
+        """Get the file download url for a given file path in given sharepoint site/team"""
+        drive_url = self._get_site_documents_drive_url(site)
+        if drive_url:
+            url = drive_url + path
+            logger.debug(f"File details request url: '{url}'")
+            resp = self.request("GET", url)
+            if not resp.ok:
+                logger.error(f"Failed to get download url for file '{path}' on '{site}'. Error: {resp.text}")
+                return None
+            return resp.json().get("@microsoft.graph.downloadUrl")
+        logger.error("Unable to determine download url without valid drive url.")
+        return None
+
+    def get_file(self, path, site):
+        """Get file from sharepoint file directory"""
+
+        download_url = data_access_layer._get_file_download_url(path, site)
+        logger.debug(f"File download url: '{download_url}'")
+        resp = requests.get(download_url)  # No auth required for this url
+        if not resp.ok:
+            logger.error(f"Failed to retrieve file from path '{path}'. Error: {resp.text}")
+            return None
+
+        return resp.content
+
 
 
 data_access_layer = Graph()
@@ -184,7 +239,7 @@ def stream_json(entities):
 #     return entity['id']
 
 
-@app.route("/<path:path>", methods=["GET", "POST"])
+@app.route("/entities/<path:path>", methods=["GET", "POST"])
 def get(path):
     if request.method == "POST":
         path = request.get_json()
@@ -209,6 +264,32 @@ def getsite():
         stream_json(entities),
         mimetype='application/json'
     )
+
+
+@app.route("/file/<path:path>", methods=["GET"])
+def get_file(path):
+    # /teams/SesamPOC/data_export/RXindex/steinfoss.csv
+
+    sharepoint_url = getattr(config, "sharepoint_url", None)
+    if not sharepoint_url:
+        return "Missing environment variable 'sharepoint_url' to use this url path", 500
+
+    sharepoint_url = urlparse(sharepoint_url).netloc
+
+    logger.info(path)
+    url_parts = path.split("/")
+    if len(url_parts) < 3:
+        logger.error(f"Invalid path specified: '{path}'")
+        abort(400)
+
+    site = sharepoint_url + ":/" + "/".join(url_parts[:2])
+    path = "/".join(url_parts[2:])
+
+    file_resp = data_access_layer.get_file(path, site)
+    if file_resp:
+        return file_resp
+
+    abort(500)
 
 
 if __name__ == '__main__':
