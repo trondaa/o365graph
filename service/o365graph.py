@@ -67,6 +67,8 @@ def set_group_id(entity):
 
 class Graph:
 
+    FILE_SIZE_LIMIT = 4000000  # bytes
+
     def __init__(self):
         self.session = None
         self.auth_header = None
@@ -80,9 +82,13 @@ class Graph:
             "resource": config.resource
         }
         logger.info("Acquiring new access token")
-        resp = requests.post(url=config.token_url, data=payload)
-        if not resp.ok:
-            logger.error(f"Access token request failed. Error: {resp.content}")
+        try:
+            resp = requests.post(url=config.token_url, data=payload)
+            if not resp.ok:
+                logger.error(f"Access token request failed. Error: {resp.content}")
+                raise
+        except Exception as e:
+            logger.error(f"Failed to talk to token service. Error: {e}")
             raise
         access_token = resp.json().get("access_token")
         self.auth_header = {"Authorization": "Bearer " + access_token}
@@ -196,6 +202,11 @@ class Graph:
         logger.error("Unable to determine download url without valid drive url.")
         return None
 
+    def _get_file_upload_url(self, path, site):
+        """Get the file upload url for a given file path in the given sharepoint site/team"""
+        drive_url = self._get_site_documents_drive_url(site)
+        return drive_url + path + ":/content"
+
     def get_file(self, path, site):
         """Get file from sharepoint file directory"""
 
@@ -205,9 +216,30 @@ class Graph:
         if not resp.ok:
             logger.error(f"Failed to retrieve file from path '{path}'. Error: {resp.text}")
             return None
-
         return resp.content
 
+    def add_file(self, content, path, site):
+        """Add file to filepath"""
+
+        # check payload size to determine upload stategy
+        payload_size = sys.getsizeof(content)
+        logger.debug(f"File size: {payload_size}")
+        if payload_size > self.FILE_SIZE_LIMIT:
+            # need to use upload session
+            pass
+        else:
+            # Simple put operation upload
+            upload_url = self._get_file_upload_url(path, site)
+            resp = self.request("PUT", upload_url, data=content)
+            if not resp.ok:
+                logger.error(f"Failed to send file to sharepoint. Response: {resp.text}")
+            return resp
+
+    def update_file(self, content, path, site):
+
+        # TODO: Add support for updating existing files
+
+        pass
 
 
 data_access_layer = Graph()
@@ -266,9 +298,8 @@ def getsite():
     )
 
 
-@app.route("/file/<path:path>", methods=["GET"])
-def get_file(path):
-    # /teams/SesamPOC/data_export/RXindex/steinfoss.csv
+@app.route("/file/<path:path>", methods=["GET", "POST"])
+def file(path):
 
     sharepoint_url = getattr(config, "sharepoint_url", None)
     if not sharepoint_url:
@@ -276,20 +307,38 @@ def get_file(path):
 
     sharepoint_url = urlparse(sharepoint_url).netloc
 
-    logger.info(path)
     url_parts = path.split("/")
     if len(url_parts) < 3:
-        logger.error(f"Invalid path specified: '{path}'")
+        logger.error(f"Invalid path specified. Path need to start with site|group|team/<name>/. Path specified was '{path}'")
         abort(400)
 
     site = sharepoint_url + ":/" + "/".join(url_parts[:2])
     path = "/".join(url_parts[2:])
 
-    file_resp = data_access_layer.get_file(path, site)
-    if file_resp:
-        return file_resp
+    if request.method == "GET":
+        file_resp = data_access_layer.get_file(path, site)
+        if file_resp:
+            return file_resp
 
-    abort(500)
+        Response(status=404, response="File not found")
+
+    if request.method == "POST":
+        if request.files:
+            failures = False
+            for file in request.files:
+                if request.files[file].filename == '':
+                    continue
+                file_resp = data_access_layer.add_file(request.files[file], path, site)
+                if not file_resp.ok:
+                    failures = True
+            if not failures:
+                return Response(status=200)
+        else:
+            file_content = request.get_data()
+            file_resp = data_access_layer.add_file(file_content, path, site)
+            if file_resp.ok:
+                return Response(status=200)
+        return Response(status=500, response="Failed to upload file to sharepoint. See ms logs for details.")
 
 
 if __name__ == '__main__':
