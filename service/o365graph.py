@@ -98,10 +98,18 @@ class Graph:
             self.session = requests.Session()
             self.get_token()
 
-        req = requests.Request(method, url, headers=self.auth_header, **kwargs)
+        if "headers" in kwargs:
+            headers = {**kwargs["headers"], **self.auth_header}
+            kwargs.pop("headers")
+        else:
+            headers = self.auth_header
+
+        logger.debug(f"Using following headers: \n{headers}")
+        req = requests.Request(method, url, headers=headers, **kwargs)
 
         resp = self.session.send(req.prepare())
         if resp.status_code == 401:
+            logger.warning("Received status 401. Requesting new access token.")
             self.get_token()
             resp = self.session.send(req.prepare())
 
@@ -202,9 +210,11 @@ class Graph:
         logger.error("Unable to determine download url without valid drive url.")
         return None
 
-    def _get_file_upload_url(self, path, site):
+    def _get_file_upload_url(self, path, site, session=None):
         """Get the file upload url for a given file path in the given sharepoint site/team"""
         drive_url = self._get_site_documents_drive_url(site)
+        if session:
+            return drive_url + path + ":/createUploadSession"
         return drive_url + path + ":/content"
 
     def get_file(self, path, site):
@@ -222,18 +232,44 @@ class Graph:
         """Add file to filepath"""
 
         # check payload size to determine upload stategy
-        payload_size = sys.getsizeof(content)
-        logger.debug(f"File size: {payload_size}")
-        if payload_size > self.FILE_SIZE_LIMIT:
-            # need to use upload session
-            pass
-        else:
-            # Simple put operation upload
-            upload_url = self._get_file_upload_url(path, site)
-            resp = self.request("PUT", upload_url, data=content)
-            if not resp.ok:
-                logger.error(f"Failed to send file to sharepoint. Response: {resp.text}")
-            return resp
+        try:
+            payload_size = len(content.read())
+            content.seek(0)
+            logger.debug(f"File size: {payload_size}")
+            if payload_size > self.FILE_SIZE_LIMIT:
+                # need to use upload session
+                headers = {
+                    "Content-Range": f"bytes 0-{payload_size-1}/{payload_size}",
+                    "Content-Length": str(payload_size)
+                }
+
+                session_url = self._get_file_upload_url(path, site, session=True)
+
+                session_resp = self.request("POST", session_url)
+                if not session_resp.ok:
+                    logger.error(f"Failed to create upload session for path '{path}'.")
+                    return session_resp
+                logger.debug(f"Upload session response: {session_resp.content}")
+
+                upload_url = session_resp.json().get("uploadUrl")
+                if not upload_url:
+                    logger.error("UploadUrl missing from upload session response.")
+                    return session_resp
+
+                resp = self.request("PUT", upload_url, data=content, headers=headers)
+                logger.debug(f"Upload session file PUT operation response: {resp.content}")
+                if not resp.ok:
+                    logger.error(f"Failed to send file with path '{path}' to sharepoint through upload session. Response: {resp.text}")
+                return resp
+            else:
+                # Simple put operation upload
+                upload_url = self._get_file_upload_url(path, site)
+                resp = self.request("PUT", upload_url, data=content)
+                if not resp.ok:
+                    logger.error(f"Failed to send file with path '{path}' to sharepoint. Response: {resp.text}")
+                return resp
+        except Exception as e:
+            logger.error(e)
 
     def update_file(self, content, path, site):
 
@@ -331,6 +367,7 @@ def file(path):
                 file_resp = data_access_layer.add_file(request.files[file], path, site)
                 if not file_resp.ok:
                     failures = True
+                    logger.error(f"Failed to send file. Error: {file_resp.content}")
             if not failures:
                 return Response(status=200)
         else:
