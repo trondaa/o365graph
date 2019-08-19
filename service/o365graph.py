@@ -1,4 +1,4 @@
-from flask import Flask, request, Response, abort
+from flask import Flask, request, Response, abort, jsonify
 import os
 import sys
 import requests
@@ -191,16 +191,54 @@ class Graph:
                 logger.error(f"Unable to determine documents drive id for site '{site}'. Error: {resp.text}")
                 return None
             drive_id = resp.json().get("id")
-            drive_url = url + "s/" + drive_id + "/root:/"
+            drive_url = url + "s/" + drive_id + "/root"
             return drive_url
         logger.error("Unable to determine documents drive id without a valid site_id")
         return None
+
+    def _get_drive_path_children(self, path, site):
+        """Get all the children for the given path"""
+
+        drive_url = self._get_site_documents_drive_url(site)
+        if drive_url:
+            if path:
+                children_url = drive_url + ":/" + path + ":/children?$expand=listItem($expand=fields)"
+            else:
+                children_url = drive_url + "/children?$expand=listItem($expand=fields)"
+
+            resp = self.request("GET", children_url) # TODO: add support for paging (limit of 200 entities)
+            if not resp.ok:
+                logger.error(f"Failed to get children for path '{path}'. Error: {resp.content}")
+                return resp
+            return resp.json().get("value")
+        return None
+
+    def get_drive_path_nested_children(self, path, site):
+        """Get all the children and their children for the given path"""
+        all_children = list()
+        top_children = self._get_drive_path_children(path, site)
+        if top_children and isinstance(top_children, list):
+            for child in top_children:
+                if "folder" in child:
+                    # this is a folder
+                    new_path = f"{path}/{child['name']}"
+                    children = self.get_drive_path_nested_children(new_path, site)
+                    if children:
+                        all_children = all_children + children
+                else:
+                    child["source_path"] = f"{path}"
+                    all_children.append(child)
+            return all_children
+        if top_children.status_code == 404:
+            logger.info(f"404 - Path '{path}' not found")
+            return None
+        return all_children
 
     def _get_file_download_url(self, path, site):
         """Get the file download url for a given file path in given sharepoint site/team"""
         drive_url = self._get_site_documents_drive_url(site)
         if drive_url:
-            url = drive_url + path
+            url = drive_url + ":/" + path
             logger.debug(f"File details request url: '{url}'")
             resp = self.request("GET", url)
             if not resp.ok:
@@ -214,7 +252,7 @@ class Graph:
         """Get the file upload url for a given file path in the given sharepoint site/team"""
         drive_url = self._get_site_documents_drive_url(site)
         if session:
-            return drive_url + path + ":/createUploadSession"
+            return drive_url + ":/" + path + ":/createUploadSession"
         return drive_url + path + ":/content"
 
     def get_file(self, path, site):
@@ -350,13 +388,24 @@ def file(path):
 
     site = sharepoint_url + ":/" + "/".join(url_parts[:2])
     path = "/".join(url_parts[2:])
+    file_name = url_parts[len(url_parts)-1]
+    is_file = False
+    if len(file_name.split(".")) > 1:
+        is_file = True
 
     if request.method == "GET":
-        file_resp = data_access_layer.get_file(path, site)
-        if file_resp:
-            return file_resp
-
-        Response(status=404, response="File not found")
+        if is_file:
+            logger.info(f"Retrieving file from path '{path}'")
+            file_resp = data_access_layer.get_file(path, site)
+            if file_resp:
+                return file_resp
+            Response(status=404, response="File not found")
+        else:
+            logger.info(f"Retrieving metadata for files on path '{path}'")
+            path_children = data_access_layer.get_drive_path_nested_children(path, site)
+            if path_children:
+                return jsonify(path_children)
+            return Response(status=404, response="Path not found.")
 
     if request.method == "POST":
         if request.files:
