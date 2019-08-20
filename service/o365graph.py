@@ -227,6 +227,7 @@ class Graph:
                         all_children = all_children + children
                 else:
                     child["source_path"] = f"{path}"
+                    child["_id"] = child.get("id")
                     all_children.append(child)
             return all_children
         if top_children.status_code == 404:
@@ -383,8 +384,9 @@ def file(path):
 
     url_parts = path.split("/")
     if len(url_parts) < 3:
-        logger.error(f"Invalid path specified. Path need to start with site|group|team/<name>/. Path specified was '{path}'")
-        abort(400)
+        error_message = f"Invalid path specified. Path need to start with site|group|team/<name>/. Path specified was '{path}'"
+        logger.error(error_message)
+        return Response(status=400, response=error_message)
 
     site = sharepoint_url + ":/" + "/".join(url_parts[:2])
     path = "/".join(url_parts[2:])
