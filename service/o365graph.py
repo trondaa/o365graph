@@ -255,10 +255,14 @@ class Graph:
 
     def _get_file_upload_url(self, path, site, session=None):
         """Get the file upload url for a given file path in the given sharepoint site/team"""
-        drive_url = self._get_site_documents_drive_url(site)
+        file_url = self._get_file_url(path, site)
         if session:
-            return drive_url + ":/" + path + ":/createUploadSession"
-        return drive_url + path + ":/content"
+            return file_url + ":/createUploadSession"
+        return file_url + ":/content"
+
+    def _get_file_url(self, path, site):
+        """Get base url for file path"""
+        return self._get_site_documents_drive_url(site) + ":/" + path
 
     def get_file(self, path, site):
         """Get file from sharepoint file directory"""
@@ -320,6 +324,11 @@ class Graph:
 
         pass
 
+    def update_file_metadata(self, payload, file_path, site):
+        """Update column values for the given file"""
+        file_url = self._get_file_url(file_path, site) + ":/listItem/fields"
+        return self.request("PATCH", file_url, json=payload)
+
 
 data_access_layer = Graph()
 
@@ -334,6 +343,23 @@ def stream_json(entities):
             first = False
         yield json.dumps(row)
     yield ']'
+
+
+def determine_url_parts(sharepoint_url, path):
+    """Determine the different parts of the relative url"""
+    sharepoint_url = urlparse(sharepoint_url).netloc
+    url_parts = path.split("/")
+    if len(url_parts) < 3:
+        error_message = f"Invalid path specified. Path need to start with site|group|team/<name>/. Path specified was '{path}'"
+        raise Exception(error_message)
+    site = sharepoint_url + ":/" + "/".join(url_parts[:2])
+    path = "/".join(url_parts[2:])
+    possible_file_name = url_parts[len(url_parts)-1]
+    file_name = False
+    if len(possible_file_name.split(".")) > 1:
+        file_name = possible_file_name
+
+    return site, path, file_name
 
 
 # def set_updated(entity, args):
@@ -431,6 +457,25 @@ def file(path):
                 return Response(status=200)
         return Response(status=500, response="Failed to upload file to sharepoint. See ms logs for details.")
 
+
+@app.route("/metadata/<path:path>", methods=["PATCH"])
+def metadata(path):
+
+    sharepoint_url = getattr(config, "sharepoint_url", None)
+    if not sharepoint_url:
+        return "Missing environment variable 'sharepoint_url' to use this url path", 500
+
+    try:
+        site, path, file_name = determine_url_parts(sharepoint_url, path)
+    except Exception as e:
+        return Response(status=400, response=e)
+
+    payload = request.get_json()
+
+    resp = data_access_layer.update_file_metadata(payload, path, site)  # TODO: Need proper handling of invalid site/team
+    if not resp.ok:
+        return Response(status=resp.status_code, response=resp.content)
+    return Response(status=200)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', threaded=True, port=getattr(config, 'port', 5000))
