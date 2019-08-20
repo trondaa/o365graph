@@ -215,25 +215,29 @@ class Graph:
 
     def get_drive_path_nested_children(self, path, site):
         """Get all the children and their children for the given path"""
-        all_children = list()
-        top_children = self._get_drive_path_children(path, site)
-        if top_children and isinstance(top_children, list):
-            for child in top_children:
-                if "folder" in child:
-                    # this is a folder
-                    new_path = f"{path}/{child['name']}"
-                    children = self.get_drive_path_nested_children(new_path, site)
-                    if children:
-                        all_children = all_children + children
-                else:
-                    child["source_path"] = f"{path}"
-                    child["_id"] = child.get("id")
-                    all_children.append(child)
-            return all_children
-        if top_children.status_code == 404:
-            logger.info(f"404 - Path '{path}' not found")
-            return None
-        return all_children
+        try:
+            top_children = self._get_drive_path_children(path, site)
+            if not isinstance(top_children, list) and top_children.status_code == 404:
+                error_message = f"404 - Path '{path}' not found"
+                logger.info(error_message)
+                raise Exception(error_message)
+            if top_children and isinstance(top_children, list):
+                for child in top_children:
+                    if "folder" in child:
+                        # this is a folder
+                        new_path = f"{path}/{child['name']}"
+                        children = self.get_drive_path_nested_children(new_path, site)
+                        if children:
+                            for child in children:
+                                child["source_path"] = f"{new_path}"
+                                child["_id"] = child.get("id")
+                                yield child
+                    else:
+                        child["source_path"] = f"{path}"
+                        child["_id"] = child.get("id")
+                        yield child
+        except Exception as e:
+            yield {"error": str(e)}
 
     def _get_file_download_url(self, path, site):
         """Get the file download url for a given file path in given sharepoint site/team"""
@@ -405,9 +409,8 @@ def file(path):
         else:
             logger.info(f"Retrieving metadata for files on path '{path}'")
             path_children = data_access_layer.get_drive_path_nested_children(path, site)
-            if path_children:
-                return jsonify(path_children)
-            return Response(status=404, response="Path not found.")
+            return Response(stream_json(path_children), mimetype="application/json")
+            # return Response(status=404, response="Path not found.")
 
     if request.method == "POST":
         if request.files:
