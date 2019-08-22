@@ -458,7 +458,7 @@ def file(path):
         return Response(status=500, response="Failed to upload file to sharepoint. See ms logs for details.")
 
 
-@app.route("/metadata/<path:path>", methods=["PATCH"])
+@app.route("/metadata/<path:path>", methods=["POST"])
 def metadata(path):
 
     sharepoint_url = getattr(config, "sharepoint_url", None)
@@ -471,6 +471,9 @@ def metadata(path):
         return Response(status=400, response=e)
 
     payload = request.get_json()
+
+    if isinstance(payload, list):
+        payload = payload[0]
 
     resp = data_access_layer.update_file_metadata(payload, path, site)  # TODO: Need proper handling of invalid site/team
     if not resp.ok:
