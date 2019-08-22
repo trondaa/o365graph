@@ -104,6 +104,9 @@ class Graph:
         else:
             headers = self.auth_header
 
+        if "json" in kwargs:
+            headers = {**headers, "Content-Type": "application/json"}
+
         logger.debug(f"Using following headers: \n{headers}")
         req = requests.Request(method, url, headers=headers, **kwargs)
 
@@ -179,27 +182,40 @@ class Graph:
             return None
         return resp.json().get("id")
 
-    def _get_site_documents_drive_url(self, site):
+    def _get_site_documents_drive_url(self, site, document_lib=None):
         """Find the drive id for the sharepoint site/team documents directory"""
 
         site_id = self._get_sharepoint_site_id(site)
         if site_id:
-            url = self.graph_url + "/sites/" + site_id + "/drive"
+            if document_lib:
+                url = self.graph_url + "/sites/" + site_id + "/drives"
+            else:
+                url = self.graph_url + "/sites/" + site_id + "/drive"
             logger.debug(f"site documents drive url: '{url}'")
             resp = self.request("GET", url)
             if not resp.ok:
                 logger.error(f"Unable to determine documents drive id for site '{site}'. Error: {resp.text}")
                 return None
-            drive_id = resp.json().get("id")
-            drive_url = url + "s/" + drive_id + "/root"
+            response_payload = resp.json()
+            if document_lib and len(response_payload.get("value")) > 0:
+                for lib in response_payload.get("value"):
+                    if lib["name"] == document_lib:
+                        drive_id = lib["id"]
+                if "drive_id" not in locals():
+                    logger.error(f"Unable to find id for document library '{document_lib}'")
+                    return None
+            else:
+                drive_id = response_payload.get("id")
+                url = url + "s"
+            drive_url = url + "/" + drive_id + "/root"
             return drive_url
         logger.error("Unable to determine documents drive id without a valid site_id")
         return None
 
-    def _get_drive_path_children(self, path, site):
+    def _get_drive_path_children(self, path, site, document_lib=None):
         """Get all the children for the given path"""
 
-        drive_url = self._get_site_documents_drive_url(site)
+        drive_url = self._get_site_documents_drive_url(site, document_lib)
         if drive_url:
             if path:
                 children_url = drive_url + ":/" + path + ":/children?$expand=listItem($expand=fields)"
@@ -213,10 +229,10 @@ class Graph:
             return resp.json().get("value")
         return None
 
-    def get_drive_path_nested_children(self, path, site):
+    def get_drive_path_nested_children(self, path, site, document_lib=None):
         """Get all the children and their children for the given path"""
         try:
-            top_children = self._get_drive_path_children(path, site)
+            top_children = self._get_drive_path_children(path, site, document_lib)
             if not isinstance(top_children, list) and top_children.status_code == 404:
                 error_message = f"404 - Path '{path}' not found"
                 logger.info(error_message)
@@ -226,7 +242,7 @@ class Graph:
                     if "folder" in child:
                         # this is a folder
                         new_path = f"{path}/{child['name']}"
-                        children = self.get_drive_path_nested_children(new_path, site)
+                        children = self.get_drive_path_nested_children(new_path, site, document_lib)
                         if children:
                             for child in children:
                                 child["source_path"] = f"{new_path}"
@@ -239,9 +255,9 @@ class Graph:
         except Exception as e:
             yield {"error": str(e)}
 
-    def _get_file_download_url(self, path, site):
+    def _get_file_download_url(self, path, site, document_lib=None):
         """Get the file download url for a given file path in given sharepoint site/team"""
-        drive_url = self._get_site_documents_drive_url(site)
+        drive_url = self._get_site_documents_drive_url(site, document_lib)
         if drive_url:
             url = drive_url + ":/" + path
             logger.debug(f"File details request url: '{url}'")
@@ -253,21 +269,21 @@ class Graph:
         logger.error("Unable to determine download url without valid drive url.")
         return None
 
-    def _get_file_upload_url(self, path, site, session=None):
+    def _get_file_upload_url(self, path, site, document_lib=None, session=None):
         """Get the file upload url for a given file path in the given sharepoint site/team"""
-        file_url = self._get_file_url(path, site)
+        file_url = self._get_file_url(path, site, document_lib)
         if session:
             return file_url + ":/createUploadSession"
         return file_url + ":/content"
 
-    def _get_file_url(self, path, site):
+    def _get_file_url(self, path, site, document_lib=None):
         """Get base url for file path"""
-        return self._get_site_documents_drive_url(site) + ":/" + path
+        return self._get_site_documents_drive_url(site, document_lib) + ":/" + path
 
-    def get_file(self, path, site):
+    def get_file(self, path, site, document_lib=None):
         """Get file from sharepoint file directory"""
 
-        download_url = data_access_layer._get_file_download_url(path, site)
+        download_url = data_access_layer._get_file_download_url(path, site, document_lib)
         logger.debug(f"File download url: '{download_url}'")
         resp = requests.get(download_url)  # No auth required for this url
         if not resp.ok:
@@ -275,7 +291,7 @@ class Graph:
             return None
         return resp.content
 
-    def add_file(self, content, path, site):
+    def add_file(self, content, path, site, document_lib=None):
         """Add file to filepath"""
 
         # check payload size to determine upload stategy
@@ -290,7 +306,7 @@ class Graph:
                     "Content-Length": str(payload_size)
                 }
 
-                session_url = self._get_file_upload_url(path, site, session=True)
+                session_url = self._get_file_upload_url(path, site, document_lib, session=True)
 
                 session_resp = self.request("POST", session_url)
                 if not session_resp.ok:
@@ -310,7 +326,7 @@ class Graph:
                 return resp
             else:
                 # Simple put operation upload
-                upload_url = self._get_file_upload_url(path, site)
+                upload_url = self._get_file_upload_url(path, site, document_lib)
                 resp = self.request("PUT", upload_url, data=content)
                 if not resp.ok:
                     logger.error(f"Failed to send file with path '{path}' to sharepoint. Response: {resp.text}")
@@ -324,9 +340,9 @@ class Graph:
 
         pass
 
-    def update_file_metadata(self, payload, file_path, site):
+    def update_file_metadata(self, payload, file_path, site, document_lib=None):
         """Update column values for the given file"""
-        file_url = self._get_file_url(file_path, site) + ":/listItem/fields"
+        file_url = self._get_file_url(file_path, site, document_lib) + ":/listItem/fields"
         return self.request("PATCH", file_url, json=payload)
 
 
@@ -347,19 +363,24 @@ def stream_json(entities):
 
 def determine_url_parts(sharepoint_url, path):
     """Determine the different parts of the relative url"""
+    file_name = False
+    document_lib = False
     sharepoint_url = urlparse(sharepoint_url).netloc
     url_parts = path.split("/")
     if len(url_parts) < 3:
         error_message = f"Invalid path specified. Path need to start with site|group|team/<name>/. Path specified was '{path}'"
         raise Exception(error_message)
     site = sharepoint_url + ":/" + "/".join(url_parts[:2])
-    path = "/".join(url_parts[2:])
+    if ":" in url_parts[2]:
+        document_lib = url_parts[2].split(":")[1]
+        path = "/".join(url_parts[3:])
+    else:
+        path = "/".join(url_parts[2:])
     possible_file_name = url_parts[len(url_parts)-1]
-    file_name = False
     if len(possible_file_name.split(".")) > 1:
         file_name = possible_file_name
 
-    return site, path, file_name
+    return site, path, file_name, document_lib
 
 
 # def set_updated(entity, args):
@@ -410,31 +431,21 @@ def file(path):
     if not sharepoint_url:
         return "Missing environment variable 'sharepoint_url' to use this url path", 500
 
-    sharepoint_url = urlparse(sharepoint_url).netloc
-
-    url_parts = path.split("/")
-    if len(url_parts) < 3:
-        error_message = f"Invalid path specified. Path need to start with site|group|team/<name>/. Path specified was '{path}'"
-        logger.error(error_message)
-        return Response(status=400, response=error_message)
-
-    site = sharepoint_url + ":/" + "/".join(url_parts[:2])
-    path = "/".join(url_parts[2:])
-    file_name = url_parts[len(url_parts)-1]
-    is_file = False
-    if len(file_name.split(".")) > 1:
-        is_file = True
+    try:
+        site, path, file_name, document_lib = determine_url_parts(sharepoint_url, path)
+    except Exception as e:
+        return Response(status=400, response=e)
 
     if request.method == "GET":
-        if is_file:
+        if file_name:
             logger.info(f"Retrieving file from path '{path}'")
-            file_resp = data_access_layer.get_file(path, site)
+            file_resp = data_access_layer.get_file(path, site, document_lib)
             if file_resp:
                 return file_resp
             Response(status=404, response="File not found")
         else:
             logger.info(f"Retrieving metadata for files on path '{path}'")
-            path_children = data_access_layer.get_drive_path_nested_children(path, site)
+            path_children = data_access_layer.get_drive_path_nested_children(path, site, document_lib)
             return Response(stream_json(path_children), mimetype="application/json")
             # return Response(status=404, response="Path not found.")
 
@@ -444,7 +455,7 @@ def file(path):
             for file in request.files:
                 if request.files[file].filename == '':
                     continue
-                file_resp = data_access_layer.add_file(request.files[file], path, site)
+                file_resp = data_access_layer.add_file(request.files[file], path, site, document_lib)
                 if not file_resp.ok:
                     failures = True
                     logger.error(f"Failed to send file. Error: {file_resp.content}")
@@ -452,7 +463,7 @@ def file(path):
                 return Response(status=200)
         else:
             file_content = request.get_data()
-            file_resp = data_access_layer.add_file(file_content, path, site)
+            file_resp = data_access_layer.add_file(file_content, path, site, document_lib)
             if file_resp.ok:
                 return Response(status=200)
         return Response(status=500, response="Failed to upload file to sharepoint. See ms logs for details.")
@@ -466,19 +477,27 @@ def metadata(path):
         return "Missing environment variable 'sharepoint_url' to use this url path", 500
 
     try:
-        site, path, file_name = determine_url_parts(sharepoint_url, path)
+        site, path, file_name, document_lib = determine_url_parts(sharepoint_url, path)
     except Exception as e:
         return Response(status=400, response=e)
+    try:
+        logger.debug(f"received raw body: {request.get_data()}")
+        payload = request.get_json()
+        if not payload:
+            return Response(status=400, response=f"Received empty payload for path '{path}'")
 
-    payload = request.get_json()
+        if isinstance(payload, list):
+            payload = payload[0]
 
-    if isinstance(payload, list):
-        payload = payload[0]
+        logger.debug(f"received the following payload for path '{path}': \n{payload}")
 
-    resp = data_access_layer.update_file_metadata(payload, path, site)  # TODO: Need proper handling of invalid site/team
-    if not resp.ok:
-        return Response(status=resp.status_code, response=resp.content)
-    return Response(status=200)
+        resp = data_access_layer.update_file_metadata(payload, path, site, document_lib)  # TODO: Need proper handling of invalid site/team
+        if not resp.ok:
+            return Response(status=resp.status_code, response=resp.content)
+        return Response(status=200)
+    except Exception as e:
+        logger.error(e)
+        return Response(status=500, response=e)
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', threaded=True, port=getattr(config, 'port', 5000))
