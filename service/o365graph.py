@@ -173,7 +173,9 @@ class Graph:
     def _get_sharepoint_site_id(self, site):
         """Find the sharepoint id for a given site or team based on site's relative url"""
 
-        url = self.graph_url + "sites/" + site
+        site_parts = urlparse(site)
+
+        url = self.graph_url + "sites/" + site_parts.netloc + ":" + site_parts.path
         logger.debug(f"sharepoint site id url: '{url}'")
         resp = self.request("GET", url)
         if not resp.ok:
@@ -345,6 +347,7 @@ class Graph:
     def update_file_metadata(self, payload, file_path, site, document_lib=None):
         """Update column values for the given file"""
         file_url = self._get_file_url(file_path, site, document_lib) + ":/listItem/fields"
+        logger.debug(f"Updating metadata for file path '{file_path}' with url '{file_url}'")
         return self.request("PATCH", file_url, json=payload)
 
 
@@ -367,12 +370,11 @@ def determine_url_parts(sharepoint_url, path):
     """Determine the different parts of the relative url"""
     file_name = False
     document_lib = False
-    sharepoint_url = urlparse(sharepoint_url).netloc
     url_parts = path.split("/")
     if len(url_parts) < 3:
         error_message = f"Invalid path specified. Path need to start with site|group|team/<name>/. Path specified was '{path}'"
         raise Exception(error_message)
-    site = sharepoint_url + ":/" + "/".join(url_parts[:2])
+    site = sharepoint_url + "/" + "/".join(url_parts[:2])
     if ":" in url_parts[2]:
         document_lib = url_parts[2].split(":")[1]
         path = "/".join(url_parts[3:])
