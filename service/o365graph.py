@@ -6,7 +6,7 @@ import logging
 import json
 from dotdictify import dotdictify
 from time import sleep
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 
 
 app = Flask(__name__)
@@ -107,7 +107,6 @@ class Graph:
         if "json" in kwargs:
             headers = {**headers, "Content-Type": "application/json"}
 
-        logger.debug(f"Using following headers: \n{headers}")
         req = requests.Request(method, url, headers=headers, **kwargs)
 
         resp = self.session.send(req.prepare())
@@ -218,41 +217,44 @@ class Graph:
         drive_url = self._get_site_documents_drive_url(site, document_lib)
         if drive_url:
             if path:
-                children_url = drive_url + ":/" + path + ":/children?$expand=listItem($expand=fields)"
+                children_url = drive_url + ":/" + quote(path) + ":/children?$expand=listItem($expand=fields)"
             else:
                 children_url = drive_url + "/children?$expand=listItem($expand=fields)"
 
-            resp = self.request("GET", children_url) # TODO: add support for paging (limit of 200 entities)
-            if not resp.ok:
-                logger.error(f"Failed to get children for path '{path}'. Error: {resp.content}")
-                return resp
-            return resp.json().get("value")
+            next_page = True
+            url = children_url
+            while next_page:
+                resp = self.request("GET", url)
+                resp_payload = resp.json()
+                if "@odata.nextLink" in resp_payload:
+                    url = resp_payload["@odata.nextLink"]
+                else:
+                    next_page = False
+                yield resp_payload.get("value")
         return None
 
     def get_drive_path_nested_children(self, path, site, document_lib=None):
         """Get all the children and their children for the given path"""
         try:
-            top_children = self._get_drive_path_children(path, site, document_lib)
-            if not isinstance(top_children, list) and top_children.status_code == 404:
-                error_message = f"404 - Path '{path}' not found"
-                logger.info(error_message)
-                raise Exception(error_message)
-            if top_children and isinstance(top_children, list):
-                for child in top_children:
-                    if "folder" in child:
-                        # this is a folder
-                        new_path = f"{path}/{child['name']}"
-                        children = self.get_drive_path_nested_children(new_path, site, document_lib)
-                        if children:
-                            for child in children:
-                                child["source_path"] = f"{new_path}"
-                                child["_id"] = child.get("id")
-                                yield child
-                    else:
-                        child["source_path"] = f"{path}"
-                        child["_id"] = child.get("id")
-                        yield child
+            top_children_generator = self._get_drive_path_children(path, site, document_lib)
+            if top_children_generator:
+                for top_children in top_children_generator:
+                    for child in top_children:
+                        if "folder" in child:
+                            # this is a folder
+                            new_path = f"{path}/{child['name']}"
+                            children = self.get_drive_path_nested_children(new_path, site, document_lib)
+                            if children:
+                                for child in children:
+                                    child["source_path"] = f"{new_path}" # Todo: Something's wrong here. It ends up with wrong path on some occasions
+                                    child["_id"] = child.get("id")
+                                    yield child
+                        else:
+                            child["source_path"] = f"{path}"
+                            child["_id"] = child.get("id")
+                            yield child
         except Exception as e:
+            logger.error(f"Failure during traversal of path. Error: {e}")
             yield {"error": str(e)}
 
     def _get_file_download_url(self, path, site, document_lib=None):
@@ -278,7 +280,7 @@ class Graph:
 
     def _get_file_url(self, path, site, document_lib=None):
         """Get base url for file path"""
-        return self._get_site_documents_drive_url(site, document_lib) + ":/" + path
+        return self._get_site_documents_drive_url(site, document_lib) + ":/" + quote(path)
 
     def get_file(self, path, site, document_lib=None):
         """Get file from sharepoint file directory"""
