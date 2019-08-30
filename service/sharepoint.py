@@ -4,7 +4,7 @@ import json
 import logging
 from urllib.parse import urlparse
 
-logger = logging.getLogger()
+logger = logging.getLogger(f"__main__.{__name__}")
 
 
 class Sharepoint(object):
