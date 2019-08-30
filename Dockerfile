@@ -1,10 +1,11 @@
-FROM python:3-alpine
+FROM python:3.7
 MAINTAINER Philip Ahlberg "philip.ahlberg@sesam.io"
-COPY ./service /service
 
-RUN pip install --upgrade pip
+WORKDIR /service
+ADD ./requirements.txt /service/requirements.txt
+RUN pip install -r requirements.txt
 
-RUN pip install -r /service/requirements.txt
+ADD . /service
 
 EXPOSE 5000/tcp
 
