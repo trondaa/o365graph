@@ -4,7 +4,7 @@ import sys
 import requests
 import logging
 import json
-from dotdictify import dotdictify
+from sesamutils import Dotdictify
 from time import sleep
 from urllib.parse import urlparse, quote
 
@@ -137,7 +137,7 @@ class Graph:
                 error_text = f"Unexpected response status code: {req.status_code} with response text {req.text}"
                 logger.error(error_text)
                 raise AssertionError(error_text)
-            res = dotdictify(req.json())
+            res = Dotdictify(req.json())
             for entity in res.get(config.entities_path):
 
                 yield(entity)
@@ -157,7 +157,7 @@ class Graph:
             if not req.ok:
                 logger.info('no url')
             else:
-                res = dotdictify(req.json())
+                res = Dotdictify(req.json())
                 res['_id'] = set_group_id(entity)
 
                 yield res
