@@ -2,6 +2,7 @@ from flask import Flask, request, Response
 import os
 import sys
 import logging
+from sesamutils import VariablesConfig
 
 from graph import Graph
 from utils import stream_json, determine_url_parts
@@ -12,26 +13,6 @@ app = Flask(__name__)
 required_env_vars = ["client_id", "client_secret", "grant_type", "resource", "entities_path", "next_page", "token_url"]
 optional_env_vars = ["log_level", "base_url", "sleep", "port", "sharepoint_url"]
 
-
-class AppConfig(object):
-    pass
-
-
-config = AppConfig()
-
-# load variables
-missing_env_vars = list()
-for env_var in required_env_vars:
-    value = os.getenv(env_var)
-    if not value:
-        missing_env_vars.append(env_var)
-    setattr(config, env_var, value)
-
-for env_var in optional_env_vars:
-    value = os.getenv(env_var)
-    if value:
-        setattr(config, env_var, value)
-
 # Set up logging
 format_string = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 logger = logging.getLogger(__name__)
@@ -39,7 +20,7 @@ stdout_handler = logging.StreamHandler()
 stdout_handler.setFormatter(logging.Formatter(format_string))
 logger.addHandler(stdout_handler)
 
-loglevel = getattr(config, "log_level", "INFO")
+loglevel = os.getenv("log_level", "INFO")
 level = logging.getLevelName(loglevel.upper())
 if not isinstance(level, int):
     logger.warning("Unsupported log level defined. Using default level 'INFO'")
@@ -47,8 +28,8 @@ if not isinstance(level, int):
 logger.setLevel(level)
 
 
-if len(missing_env_vars) != 0:
-    logger.error(f"Missing the following required environment variable(s) {missing_env_vars}")
+config = VariablesConfig(required_env_vars, optional_env_vars=optional_env_vars)
+if not config.validate():
     sys.exit(1)
 
 
