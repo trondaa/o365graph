@@ -1,7 +1,7 @@
 import json
 import logging
 
-logger = logging.getLogger(f"__main__.{__name__}")
+logger = logging.getLogger(f"o365graph.{__name__}")
 
 
 def set_group_id(entity):

@@ -4,7 +4,7 @@ import json
 import logging
 from urllib.parse import urlparse
 
-logger = logging.getLogger(f"__main__.{__name__}")
+logger = logging.getLogger(f"o365graph.{__name__}")
 
 
 class Sharepoint(object):

@@ -2,7 +2,7 @@ from flask import Flask, request, Response
 import os
 import sys
 import logging
-from sesamutils import VariablesConfig
+from sesamutils import VariablesConfig, sesam_logger
 
 from graph import Graph
 from utils import stream_json, determine_url_parts
@@ -13,20 +13,7 @@ app = Flask(__name__)
 required_env_vars = ["client_id", "client_secret", "grant_type", "resource", "entities_path", "next_page", "token_url"]
 optional_env_vars = ["log_level", "base_url", "sleep", "port", "sharepoint_url"]
 
-# Set up logging
-format_string = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-logger = logging.getLogger(__name__)
-stdout_handler = logging.StreamHandler()
-stdout_handler.setFormatter(logging.Formatter(format_string))
-logger.addHandler(stdout_handler)
-
-loglevel = os.getenv("log_level", "INFO")
-level = logging.getLevelName(loglevel.upper())
-if not isinstance(level, int):
-    logger.warning("Unsupported log level defined. Using default level 'INFO'")
-    level = logging.INFO
-logger.setLevel(level)
-
+logger = sesam_logger("o365graph")
 
 config = VariablesConfig(required_env_vars, optional_env_vars=optional_env_vars)
 if not config.validate():

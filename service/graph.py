@@ -7,7 +7,7 @@ from urllib.parse import urlparse, quote
 
 from utils import set_group_id
 
-logger = logging.getLogger(f"__main__.{__name__}")
+logger = logging.getLogger(f"o365graph.{__name__}")
 
 class Graph:
 
