@@ -11,7 +11,7 @@ app = Flask(__name__)
 
 # Environment variables
 required_env_vars = ["client_id", "client_secret", "grant_type", "resource", "entities_path", "next_page", "token_url"]
-optional_env_vars = ["log_level", "base_url", "sleep", "port", "sharepoint_url"]
+optional_env_vars = ["log_level", "base_url", "sleep", "sharepoint_url"]
 
 logger = sesam_logger("o365graph")
 
@@ -127,4 +127,4 @@ def metadata(path):
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', threaded=True, port=getattr(config, 'port', 5000))
+    app.run(debug=True, host='0.0.0.0', threaded=True, port=5000)

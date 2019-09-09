@@ -19,7 +19,6 @@ Connector for Sesam to use the Microsoft Graph Api
 * log_level
 * base_url
 * sleep
-* port
 * sharepoint_url
 
 
