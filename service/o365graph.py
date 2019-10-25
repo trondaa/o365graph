@@ -48,6 +48,24 @@ def getsite():
         stream_json(entities),
         mimetype='application/json'
     )
+@app.route("/list/<path:path>", methods=["GET", "POST"])
+def list(path):
+    if request.method == "GET":
+        path = path
+        entities = data_access_layer.get_list(path, args=request.args)
+
+    if request.method == "POST":
+        entities = request.get_json()
+
+
+
+
+
+    return Response(
+        stream_json(entities),
+        mimetype='application/json'
+    )
+
 
 
 @app.route("/file/<path:path>", methods=["GET", "POST"])

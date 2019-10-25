@@ -38,6 +38,12 @@ def determine_url_parts(sharepoint_url, path):
     if ":" in url_parts[2]:
         document_lib = url_parts[2].split(":")[1]
         path = "/".join(url_parts[3:])
+    elif ":" in url_parts[3]:
+        document_lib = url_parts[3].split(":")[1]
+        path = "/".join(url_parts[4:])
+    elif ":" in url_parts[4]:
+        document_lib = url_parts[4].split(":")[1]
+        path = "/".join(url_parts[5:])
     else:
         path = "/".join(url_parts[2:])
     possible_file_name = url_parts[len(url_parts)-1]

@@ -107,6 +107,18 @@ class Graph:
 
                 yield res
 
+    def __get_list(self, path, args):
+        logger.info('fetching list urls')
+
+        url = self.graph_url + "sites/" + path + "items?$expand=fields"
+        req = self.request("GET", url)
+        if not req.ok:
+            logger.info('no url')
+        else:
+            res = Dotdictify(req.json())
+
+            yield res
+
     def get_paged_entities(self, path, args):
         print("getting all paged")
         return self.__get_all_paged_entities(path, args)
@@ -114,6 +126,10 @@ class Graph:
     def get_siteurls(self, posted_entities):
         print("getting all siteurls")
         return self.__get_all_siteurls(posted_entities)
+
+    def get_list(self, path, args):
+        print("getting list")
+        return self.__get_list(path, args)
 
     def _get_sharepoint_site_id(self, site):
         """Find the sharepoint id for a given site or team based on site's relative url"""
