@@ -1,0 +1,4 @@
+requests==2.20.0
+flask>=1.0.0
+git+git://github.com/andebor/sharepy@develop#egg=sharepy
+sesamutils==0.1.6

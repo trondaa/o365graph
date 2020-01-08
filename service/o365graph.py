@@ -1,141 +1,29 @@
 from flask import Flask, request, Response
 import os
-import requests
+import sys
 import logging
-import json
-import dotdictify
-from time import sleep
-from requests.exceptions import HTTPError
+from sesamutils import VariablesConfig, sesam_logger
 
+from graph import Graph
+from utils import stream_json, determine_url_parts
 
 app = Flask(__name__)
-logger = None
-format_string = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-logger = logging.getLogger('o365graph-service')
 
-# Log to stdout
+# Environment variables
+required_env_vars = ["client_id", "client_secret", "grant_type", "resource", "entities_path", "next_page", "token_url"]
+optional_env_vars = ["log_level", "base_url", "sleep", "sharepoint_url"]
 
-stdout_handler = logging.StreamHandler()
-stdout_handler.setFormatter(logging.Formatter(format_string))
-logger.addHandler(stdout_handler)
-logger.setLevel(logging.DEBUG)
+logger = sesam_logger("o365graph")
 
-
-
-def set_group_id(entity):
-    for k, v in entity.items():
-        if k.split(":")[-1] == "id":
-            groupid = v
-            logger.info(groupid)
-        else:
-            pass
-    return groupid
-
-##getting token from oauth2
-def get_token():
-    logger.info("Creating header")
-    headers= {}
-    payload = {
-        "client_id":os.environ.get('client_id'),
-        "client_secret":os.environ.get('client_secret'),
-        "grant_type": os.environ.get('grant_type'),
-        "resource": os.environ.get('resource')
-    }
-    #logger.info(payload)
-    resp = requests.post(url=os.environ.get('token_url'), data=payload, headers=headers).json()
-    token = dotdictify.dotdictify(resp).access_token
-    logger.info("Received access token from " + os.environ.get('token_url'))
-    return token
-
-class DataAccess:
-
-#main get function, will probably run most via path:path
-
-    def __get_all_paged_entities(self, path, args):
-        logger.info("Fetching data from paged url: %s", path)
-        url = os.environ.get("base_url") + path
-        access_token = get_token()
-        next_page = url
-        page_counter = 1
-        while next_page is not None:
-            if os.environ.get('sleep') is not None:
-                logger.info("sleeping for %s milliseconds", os.environ.get('sleep') )
-                sleep(float(os.environ.get('sleep')))
-
-            logger.info("Fetching data from url: %s", next_page)
-            if "$skiptoken" not in next_page:
-                req = requests.get(next_page, params=args, headers={"Authorization": "Bearer " + access_token})
-
-            else:
-                 req = requests.get(next_page, headers={"Authorization": "Bearer " + access_token})
-
-            if req.status_code != 200:
-                logger.error("Unexpected response status code: %d with response text %s" % (req.status_code, req.text))
-                raise AssertionError ("Unexpected response status code: %d with response text %s"%(req.status_code, req.text))
-            res = dotdictify.dotdictify(json.loads(req.text))
-            for entity in res.get(os.environ.get("entities_path")):
-
-                yield(entity)
-
-            if res.get(os.environ.get('next_page')) is not None:
-                page_counter+=1
-                next_page = res.get(os.environ.get('next_page'))
-            else:
-                next_page = None
-        logger.info('Returning entities from %i pages', page_counter)
-
-    def __get_all_siteurls(self, posted_entities):
-        logger.info('fetching site urls')
-        access_token = get_token()
-        for entity in posted_entities:
-            url = "https://graph.microsoft.com/v1.0/groups/" + set_group_id(entity) + "/sites/root"
-            req = requests.get(url=url, headers={"Authorization": "Bearer " + access_token})
-            if req.status_code != 200:
-                logger.info('no url')
-            else:
-                res = dotdictify.dotdictify(json.loads(req.text))
-                res['_id'] = set_group_id(entity)
-
-                yield res
-
-    def get_paged_entities(self,path, args):
-        print("getting all paged")
-        return self.__get_all_paged_entities(path, args)
-
-    def get_siteurls(self,posted_entities):
-        print("getting all siteurls")
-        return self.__get_all_siteurls(posted_entities)
-
-data_access_layer = DataAccess()
+config = VariablesConfig(required_env_vars, optional_env_vars=optional_env_vars)
+if not config.validate():
+    sys.exit(1)
 
 
-def stream_json(entities):
-    first = True
-    yield '['
-    for i, row in enumerate(entities):
-        if not first:
-            yield ','
-        else:
-            first = False
-        yield json.dumps(row)
-    yield ']'
+data_access_layer = Graph(config)
 
 
-# def set_updated(entity, args):
-#     since_path = args.get("since_path")
-#
-#     if since_path is not None:
-#         b = Dotdictify(entity)
-#         entity["_updated"] = b.get(since_path)
-
-# def rename(entity):
-#     for key, value in entity.items():
-#         res = dict(entity[key.split(':')[1]]=entity.pop(key))
-#     logger.info(res)
-#     return entity['id']
-
-
-@app.route("/<path:path>", methods=["GET", "POST"])
+@app.route("/entities/<path:path>", methods=["GET", "POST"])
 def get(path):
     if request.method == "POST":
         path = request.get_json()
@@ -150,6 +38,7 @@ def get(path):
         mimetype='application/json'
     )
 
+
 @app.route("/siteurl", methods=["POST"])
 def getsite():
     posted_entities = request.get_json()
@@ -161,5 +50,81 @@ def getsite():
     )
 
 
+@app.route("/file/<path:path>", methods=["GET", "POST"])
+def file(path):
+
+    sharepoint_url = getattr(config, "sharepoint_url", None)
+    if not sharepoint_url:
+        return "Missing environment variable 'sharepoint_url' to use this url path", 500
+
+    try:
+        site, path, file_name, document_lib = determine_url_parts(sharepoint_url, path)
+    except Exception as e:
+        return Response(status=400, response=e)
+
+    if request.method == "GET":
+        if file_name:
+            logger.info(f"Retrieving file from path '{path}'")
+            file_resp = data_access_layer.get_file(path, site, document_lib)
+            if file_resp:
+                return file_resp
+            Response(status=404, response="File not found")
+        else:
+            logger.info(f"Retrieving metadata for files on path '{path}'")
+            path_children = data_access_layer.get_drive_path_nested_children(path, site, document_lib)
+            return Response(stream_json(path_children), mimetype="application/json")
+            # return Response(status=404, response="Path not found.")
+
+    if request.method == "POST":
+        if request.files:
+            failures = False
+            for file in request.files:
+                if request.files[file].filename == '':
+                    continue
+                file_resp = data_access_layer.add_file(request.files[file], path, site, document_lib)
+                if not file_resp.ok:
+                    failures = True
+                    logger.error(f"Failed to send file. Error: {file_resp.content}")
+            if not failures:
+                return Response(status=200)
+        else:
+            file_content = request.get_data()
+            file_resp = data_access_layer.add_file(file_content, path, site, document_lib)
+            if file_resp.ok:
+                return Response(status=200)
+        return Response(status=500, response="Failed to upload file to sharepoint. See ms logs for details.")
+
+
+@app.route("/metadata/<path:path>", methods=["POST"])
+def metadata(path):
+
+    sharepoint_url = getattr(config, "sharepoint_url", None)
+    if not sharepoint_url:
+        return "Missing environment variable 'sharepoint_url' to use this url path", 500
+
+    try:
+        site, path, file_name, document_lib = determine_url_parts(sharepoint_url, path)
+    except Exception as e:
+        return Response(status=400, response=e)
+    try:
+        logger.debug(f"received raw body: {request.get_data()}")
+        payload = request.get_json()
+        if not payload:
+            return Response(status=400, response=f"Received empty payload for path '{path}'")
+
+        if isinstance(payload, list):
+            payload = payload[0]
+
+        logger.debug(f"received the following payload for path '{path}': \n{payload}")
+
+        resp = data_access_layer.update_file_metadata(payload, path, site, document_lib)  # TODO: Need proper handling of invalid site/team
+        if not resp.ok:
+            return Response(status=resp.status_code, response=resp.content)
+        return Response(status=200)
+    except Exception as e:
+        logger.error(e)
+        return Response(status=500, response=e)
+
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', threaded=True, port=os.environ.get('port',5000))
+    app.run(debug=True, host='0.0.0.0', threaded=True, port=5000)
