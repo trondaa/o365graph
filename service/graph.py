@@ -57,7 +57,6 @@ class Graph:
         req = requests.Request(method, url, headers=headers, **kwargs)
 
         resp = self.session.send(req.prepare())
-
         if resp.status_code == 401:
             logger.warning("Received status 401. Requesting new access token.")
             self.get_token()
@@ -299,6 +298,7 @@ class Graph:
         return self.request("PATCH", file_url, json=payload)
 
     def upload_user_image(self, content, path):
+        """Upload user image for a given user"""
         url = self.graph_url+path.replace("{user}", content["user"])
         logger.debug("url: " +  url)
 
