@@ -4,6 +4,8 @@ import requests
 from time import sleep
 from sesamutils import Dotdictify
 from urllib.parse import urlparse, quote
+import base64
+import io
 
 from utils import set_group_id
 
@@ -55,6 +57,7 @@ class Graph:
         req = requests.Request(method, url, headers=headers, **kwargs)
 
         resp = self.session.send(req.prepare())
+
         if resp.status_code == 401:
             logger.warning("Received status 401. Requesting new access token.")
             self.get_token()
@@ -294,3 +297,21 @@ class Graph:
         file_url = self._get_file_url(file_path, site, document_lib) + ":/listItem/fields"
         logger.debug(f"Updating metadata for file path '{file_path}' with url '{file_url}'")
         return self.request("PATCH", file_url, json=payload)
+
+    def upload_user_image(self, content, path):
+        url = self.graph_url+path.replace("{user}", content["user"])
+        logger.debug("url: " +  url)
+
+        imgb64 = content["image"]
+        img_data = imgb64.encode()
+        image = io.BytesIO(base64.decodebytes(img_data))
+
+        headers = {"Content-Type": "image/jpeg"}
+        try:
+            resp = self.request("PUT", url, data=image, headers=headers)
+            if not resp.ok:
+                logger.error(f"Failed to upload image to path '{url}'. Response: {resp.status_code} - {resp.content}")
+            return resp
+        except Exception as e:
+            logger.error(e)
+
