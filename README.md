@@ -63,6 +63,6 @@ Payload must contain the following:
 ```json
 {
   "user": "O365 user id or userPrincipalName",
-  "image": "string image data"
+  "image": "base64 encoded image data"
 }
 ```

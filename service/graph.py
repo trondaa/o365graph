@@ -302,9 +302,7 @@ class Graph:
         url = self.graph_url+path.replace("{user}", content["user"])
         logger.debug("url: " +  url)
 
-        imgb64 = content["image"]
-        img_data = imgb64.encode()
-        image = io.BytesIO(base64.decodebytes(img_data))
+        image = io.BytesIO(base64.b64decode(content["image"]))
 
         headers = {"Content-Type": "image/jpeg"}
         try:
