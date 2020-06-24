@@ -57,7 +57,7 @@ Payload must be in the following format:
 
 #### /user-image/<path>
 
-Specify image upload url in path. The url needs to contain placeholder "{user}" which will be replaced by user ID or UPN from payload attribute "user".
+Specify image upload location in path. The path needs to contain placeholder "{user}" which will be replaced by user ID or UPN from payload attribute "user".
 i.e. `/user-image/users/{user}/photo/$value`
 
 Payload must contain the following:
