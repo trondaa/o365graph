@@ -301,9 +301,7 @@ class Graph:
         """Upload user image for a given user"""
         url = self.graph_url+path.replace("{user}", content["user"])
         logger.debug("url: " +  url)
-
         image = io.BytesIO(base64.b64decode(content["image"]))
-
         headers = {"Content-Type": "image/jpeg"}
         try:
             resp = self.request("PUT", url, data=image, headers=headers)
