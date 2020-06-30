@@ -126,5 +126,19 @@ def metadata(path):
         return Response(status=500, response=e)
 
 
+@app.route("/user-image/<path:path>", methods=["POST"])
+def image(path):
+    content = request.get_json()
+    for user in content:
+        try:
+            resp = data_access_layer.upload_user_image(user, path)
+            if not resp.ok:
+                return Response(status=resp.status_code, response=resp.content)
+        except Exception as e:
+            logger.error(e)
+            return Response(status=500, response=e)
+    return Response(status=200)
+
+
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', threaded=True, port=5000)

@@ -4,6 +4,8 @@ import requests
 from time import sleep
 from sesamutils import Dotdictify
 from urllib.parse import urlparse, quote
+import base64
+import io
 
 from utils import set_group_id
 
@@ -294,3 +296,18 @@ class Graph:
         file_url = self._get_file_url(file_path, site, document_lib) + ":/listItem/fields"
         logger.debug(f"Updating metadata for file path '{file_path}' with url '{file_url}'")
         return self.request("PATCH", file_url, json=payload)
+
+    def upload_user_image(self, content, path):
+        """Upload user image for a given user"""
+        url = self.graph_url+path.replace("{user}", content["user"])
+        logger.debug("url: " +  url)
+        image = io.BytesIO(base64.b64decode(content["image"]))
+        headers = {"Content-Type": "image/jpeg"}
+        try:
+            resp = self.request("PUT", url, data=image, headers=headers)
+            if not resp.ok:
+                logger.error(f"Failed to upload image to path '{url}'. Response: {resp.status_code} - {resp.content}")
+            return resp
+        except Exception as e:
+            logger.error(e)
+
