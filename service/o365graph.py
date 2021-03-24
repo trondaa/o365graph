@@ -10,12 +10,19 @@ from utils import stream_json, determine_url_parts
 app = Flask(__name__)
 
 # Environment variables
-required_env_vars = ["client_id", "client_secret", "grant_type", "resource", "entities_path", "next_page", "token_url"]
+required_env_vars_client_credentials = ["client_id", "client_secret", "grant_type", "resource", "entities_path", "next_page", "token_url"]
+required_env_vars_password = ["client_id", "client_secret", "username", "password", "grant_type", "resource", "scope", "entities_path", "next_page", "token_url"]
 optional_env_vars = ["log_level", "base_url", "sleep", "sharepoint_url"]
 
 logger = sesam_logger("o365graph")
 
-config = VariablesConfig(required_env_vars, optional_env_vars=optional_env_vars)
+
+grant_type = os.getenv("grant_type")
+if grant_type == "password":
+    config = VariablesConfig(required_env_vars=required_env_vars_password, optional_env_vars=optional_env_vars)
+else:
+    config = VariablesConfig(required_env_vars=required_env_vars_client_credentials, optional_env_vars=optional_env_vars)
+
 if not config.validate():
     sys.exit(1)
 
@@ -137,6 +144,20 @@ def image(path):
         except Exception as e:
             logger.error(e)
             return Response(status=500, response=e)
+    return Response(status=200)
+
+
+@app.route("/upsert/<path:path>", methods=["POST"])
+def upsert(path):
+    logger.info(f"received raw body: {request.get_data()}")
+    content = request.get_json()
+    try:
+        resp = data_access_layer.upsert_entity(path, content)
+        if not resp.ok:
+            return Response(status=resp.status_code, response=resp.content)
+    except Exception as e:
+        logger.error(e)
+        return Response(status=500, response=e)
     return Response(status=200)
 
 

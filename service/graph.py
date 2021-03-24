@@ -22,12 +22,24 @@ class Graph:
         self.config = config
 
     def get_token(self):
-        payload = {
-            "client_id": self.config.client_id,
-            "client_secret": self.config.client_secret,
-            "grant_type": self.config.grant_type,
-            "resource": self.config.resource
-        }
+        if self.config.grant_type == "password":
+            payload = {
+                "client_id": self.config.client_id,
+                "client_secret": self.config.client_secret,
+                "username": self.config.username,
+                "password": self.config.password,
+                "grant_type": self.config.grant_type,
+                "scope": self.config.scope,
+                "resource": self.config.resource
+            }
+            logger.info("Acquiring new auth token")
+        else:
+            payload = {
+                "client_id": self.config.client_id,
+                "client_secret": self.config.client_secret,
+                "grant_type": self.config.grant_type,
+                "resource": self.config.resource
+            }
         logger.info("Acquiring new access token")
         try:
             resp = requests.post(url=self.config.token_url, data=payload)
@@ -310,4 +322,30 @@ class Graph:
             return resp
         except Exception as e:
             logger.error(e)
+    
+    def upsert_entity(self, path, entity):
+        logger.info(f"Upserting entity on path '{path}'")
+        if entity["id"]:
+            url = self.graph_url+path+entity["id"]
+            logger.debug(f"Updating entity on path '{url}'")
+            try:
+                resp = self.request("PATCH", url, json=entity)
+                if not resp.ok:
+                    logger.error(f"Failed to update entity with path '{url}'. Response: {resp.status_code} - {resp.content}")
+                return resp
+            except Exception as e:
+                logger.error(e)
+        else:
+            url = self.graph_url+path
+            logger.debug(f"Inserting entity on path '{url}'")
+            try:
+                resp = self.request("PUT", url, json=entity)
+                if not resp.ok:
+                    logger.error(f"Failed to update entity with path '{url}'. Response: {resp.status_code} - {resp.content}")
+                return resp
+            except Exception as e:
+                logger.error(e)
+        
+
+
 

@@ -14,6 +14,19 @@ Connector for Sesam to use the Microsoft Graph Api
 * next_page
 * token_url
 
+#### Required if grant_type is password
+
+* client_id
+* client_secret
+* username
+* password
+* grant_type
+* resource
+* scope
+* entities_path
+* next_page
+* token_url
+
 #### Optional
 
 * log_level
@@ -64,5 +77,23 @@ Payload must contain the following:
 {
   "user": "O365 user id or userPrincipalName",
   "image": "base64 encoded image data"
+}
+```
+#### /upsert/<path>
+
+Insert or update entities depending on if a property named id is present or not. The path determines where to do the insert/update i.e. `/termStore/groups/<term group id>/sets/<term set id>/terms/`
+
+Payload must contain the following to be updated:
+```json
+{
+  "id": "<id of the entity to be updated>",
+  "property": "<property to update>"
+}
+```
+
+Payload must not contain the property `id` to be inserted:
+```json
+{
+  "property": "<property to insert>"
 }
 ```
