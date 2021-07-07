@@ -325,8 +325,21 @@ class Graph:
     
     def upsert_entity(self, path, entity):
         logger.info(f"Upserting entity on path '{path}'")
-        if entity["id"]:
-            url = self.graph_url+path+entity["id"]
+        
+
+        propertiesToRemove = []
+        for property in entity:
+            if(property[0] == '_'):
+                propertiesToRemove.append(property)
+
+        for property in propertiesToRemove:
+            entity.pop(property)
+            logger.info(f"removed property {property}")
+
+        logger.info(f"Entity to upsert '{entity}'")
+
+        if entity['id']:
+            url = self.graph_url+path+entity['id']
             logger.debug(f"Updating entity on path '{url}'")
             try:
                 resp = self.request("PATCH", url, json=entity)

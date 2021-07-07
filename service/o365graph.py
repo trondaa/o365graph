@@ -151,13 +151,14 @@ def image(path):
 def upsert(path):
     logger.info(f"received raw body: {request.get_data()}")
     content = request.get_json()
-    try:
-        resp = data_access_layer.upsert_entity(path, content)
-        if not resp.ok:
-            return Response(status=resp.status_code, response=resp.content)
-    except Exception as e:
-        logger.error(e)
-        return Response(status=500, response=e)
+    for entity in content:
+        try:
+            resp = data_access_layer.upsert_entity(path, entity)
+            if not resp.ok:
+                return Response(status=resp.status_code, response=resp.content)
+        except Exception as e:
+            logger.error(e)
+            return Response(status=500, response=e)
     return Response(status=200)
 
 
